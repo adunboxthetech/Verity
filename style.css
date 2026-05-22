@@ -167,17 +167,24 @@ h5,
     width: 32px;
     height: 32px;
     border-radius: 8px;
-    background: #09090b; /* Always dark so the white logo is visible */
+    background: var(--bg-secondary);
+    border: 1px solid var(--glass-border);
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
+    transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
 .brand-logo {
     width: 20px;
     height: 20px;
     object-fit: contain;
+    content: url("assets/AD_logo.png");
+}
+
+[data-theme="light"] .brand-logo {
+    content: url("assets/AD_logo_black.png");
 }
 
 .app-title {

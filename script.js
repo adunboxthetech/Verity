@@ -20,6 +20,7 @@ class FactCheckerApp {
         this.ambientGradient = document.getElementById('ambientGradient');
         this.welcomeSection = document.getElementById('welcomeSection');
         this.bottomArea = document.querySelector('.bottom-area');
+        this.brandLogo = document.getElementById('brandLogo');
         this.analyzeImageBtn = null;
     }
 
@@ -175,6 +176,13 @@ class FactCheckerApp {
     applyTheme(theme) {
         document.documentElement.setAttribute('data-theme', theme);
         this.updateThemeIcon(theme);
+        if (this.brandLogo) {
+            this.brandLogo.src = theme === 'dark' ? 'assets/AD_logo.png' : 'assets/AD_logo_black.png';
+            this.brandLogo.onerror = () => {
+                this.brandLogo.onerror = null;
+                this.brandLogo.src = theme === 'dark' ? 'assets/logo.png' : 'assets/logo_black.png';
+            };
+        }
     }
 
     toggleTheme() {

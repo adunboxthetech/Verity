@@ -29,15 +29,22 @@
       const htmlLum = getLuminance(htmlBg);
 
       let bodyLum = null;
+      let bodyTextLum = null;
       if (document.body) {
-        const bodyBg = window.getComputedStyle(document.body).backgroundColor;
-        bodyLum = getLuminance(bodyBg);
+        const bodyStyle = window.getComputedStyle(document.body);
+        bodyLum = getLuminance(bodyStyle.backgroundColor);
+        bodyTextLum = getLuminance(bodyStyle.color);
       }
 
       // Use body background luminance if available, otherwise html background
       const lum = bodyLum !== null ? bodyLum : htmlLum;
       if (lum !== null) {
         isDark = lum < 128; // luminance < 128 means a dark background
+      } else if (bodyTextLum !== null) {
+        // Fallback: If background is transparent/not set, check text color.
+        // If text color is light (luminance >= 128), background is likely dark.
+        // If text color is dark (luminance < 128), background is likely light.
+        isDark = bodyTextLum >= 128;
       }
     } catch (e) {
       console.error("[AI Fact Checker] Theme detection error:", e);

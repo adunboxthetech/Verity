@@ -31,6 +31,7 @@ scratch*.py
 patch_*.py
 
 # Virtual environments
+.venv/
 venv/
 env/
 ENV/
@@ -48,3 +49,7 @@ Thumbs.db
 # Vercel
 .vercel
 node_modules/
+
+# Local browser/tool profiles
+.antigravitycli/
+.chrome_profile*/

@@ -1,0 +1,9 @@
+.antigravitycli/
+.chrome_profile/
+.chrome_profile_test/
+.venv/
+venv/
+node_modules/
+__pycache__/
+*.py[cod]
+.DS_Store

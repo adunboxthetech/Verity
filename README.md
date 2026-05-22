@@ -40,8 +40,8 @@ Verity is a tool I built to verify online claims, articles, and images. Instead 
 ### Setup
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/adunboxthetech/AI-fact-checker.git
-   cd AI-fact-checker
+   git clone https://github.com/adunboxthetech/Verity.git
+   cd Verity
    ```
 
 2. **Install dependencies**:

@@ -1,4 +1,4 @@
-const DEFAULT_API_BASE = "https://anindya-das-ai-fact-checker.vercel.app";
+const DEFAULT_API_BASE = "https://anindya-das-verity.vercel.app";
 
 const elements = {
   statusText: document.getElementById("statusText"),

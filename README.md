@@ -79,7 +79,7 @@ The extension lives in `extension/` and uses the same Flask backend through `POS
 4. Click "Load unpacked" and select the `extension` folder.
 5. Browse a social feed and click the extension icon to check the visible post.
 
-The popup defaults to the production backend at `https://anindya-das-verity.vercel.app`, and you can change the backend URL from its settings button when developing locally.
+The popup defaults to the production backend at `https://veritycheck.vercel.app`, and you can change the backend URL from its settings button when developing locally.
 
 ## Deployment
 

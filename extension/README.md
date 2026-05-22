@@ -14,7 +14,7 @@ This is a separate Chrome Extension frontend for the existing Flask backend. The
 5. Select this `extension` folder.
 6. Browse to a social feed, open a post in view, then click the Verity extension icon.
 
-The popup defaults to the production backend at `https://anindya-das-verity.vercel.app`. Use the settings button in the popup to point it at `http://localhost:5000` while developing locally.
+The popup defaults to the production backend at `https://veritycheck.vercel.app`. Use the settings button in the popup to point it at `http://localhost:5000` while developing locally.
 
 ## How It Works
 

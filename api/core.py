@@ -1838,7 +1838,7 @@ class FactChecker:
             headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "User-Agent": "Verity/1.0 (+https://anindya-das-verity.vercel.app)",
+                "User-Agent": "Verity/1.0 (+https://veritycheck.vercel.app)",
                 "Authorization": f"Bearer {self.groq_api_key}",
             }
             model_failed = False

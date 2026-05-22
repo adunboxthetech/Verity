@@ -41,11 +41,26 @@
   <div class="app-wrapper">
     <header class="header">
       <div class="header-content">
+        <div class="brand-badge">
+          <img id="brandLogo" src="assets/AD_logo.png" alt="Logo" class="brand-logo" loading="eager" onerror="this.onerror=null; this.src='assets/logo.png';" />
+        </div>
+
         <div class="brand">
-          <div class="brand-badge">
-            <img id="brandLogo" src="assets/AD_logo.png" alt="Logo" class="brand-logo" loading="eager" onerror="this.onerror=null; this.src='assets/logo.png';" />
-          </div>
-          <h1 class="app-title">Verity</h1>
+          <svg class="brand-logo-svg" viewBox="0 0 90 40" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="silver-grad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="var(--logo-check-start)" />
+                <stop offset="50%" stop-color="var(--logo-check-mid)" />
+                <stop offset="100%" stop-color="var(--logo-check-end)" />
+              </linearGradient>
+            </defs>
+            <!-- Left leg of V: Classic serif top, clean slanted stem, flat bottom cut at y=33 -->
+            <path d="M 6 11 L 18 11 C 15 11, 15 13.5, 15 14 L 25 33 H 21.5 L 11.5 14 C 11.5 13.5, 11.5 11, 6 11 Z" fill="currentColor" />
+            <!-- Right Leg (Checkmark): Starts exactly at the bottom joint of the left leg (23.25, 33) -->
+            <path d="M 23.25 33 L 36.5 6.5" stroke="url(#silver-grad)" stroke-width="2.8" stroke-linecap="round" fill="none" />
+            <!-- 'erity' text aligned for balanced kerning -->
+            <text class="logo-text" x="38" y="31" fill="currentColor">erity</text>
+          </svg>
         </div>
 
         <button id="themeToggle" class="icon-btn glass-btn" aria-label="Toggle theme" title="Toggle light/dark">

@@ -146,7 +146,7 @@ class FactCheckerApp {
 
     initializeTheme() {
         const html = document.documentElement;
-        const stored = localStorage.getItem('ai-fc-theme');
+        const stored = localStorage.getItem('verity-theme');
         const current = html.getAttribute('data-theme') || stored || 'light';
         this.applyTheme(current);
         // Reveal icon after initial theme applied (avoid FOUC)
@@ -158,14 +158,14 @@ class FactCheckerApp {
             const mm = window.matchMedia('(prefers-color-scheme: dark)');
             if (mm.addEventListener) {
                 mm.addEventListener('change', (e) => {
-                    if (!localStorage.getItem('ai-fc-theme')) {
+                    if (!localStorage.getItem('verity-theme')) {
                         this.applyTheme(e.matches ? 'dark' : 'light');
                     }
                 });
             } else if (mm.addListener) {
                 // Safari
                 mm.addListener((e) => {
-                    if (!localStorage.getItem('ai-fc-theme')) {
+                    if (!localStorage.getItem('verity-theme')) {
                         this.applyTheme(e.matches ? 'dark' : 'light');
                     }
                 });
@@ -189,7 +189,7 @@ class FactCheckerApp {
         const current = document.documentElement.getAttribute('data-theme') || 'light';
         const next = current === 'dark' ? 'light' : 'dark';
         this.applyTheme(next);
-        try { localStorage.setItem('ai-fc-theme', next); } catch (_) {}
+        try { localStorage.setItem('verity-theme', next); } catch (_) {}
     }
 
     updateThemeIcon(theme) {

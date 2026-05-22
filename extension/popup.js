@@ -81,13 +81,13 @@ function renderHostedFallback() {
   });
 
   // Theme toggle works even in fallback mode
-  const fallbackTheme = localStorage.getItem("ai-fc-ext-theme") || "dark";
+  const fallbackTheme = localStorage.getItem("verity-ext-theme") || "dark";
   applyTheme(fallbackTheme);
   elements.themeToggle.addEventListener("click", () => {
     const current = document.documentElement.getAttribute("data-theme") || "dark";
     const next = current === "dark" ? "light" : "dark";
     applyTheme(next);
-    try { localStorage.setItem("ai-fc-ext-theme", next); } catch (_) {}
+    try { localStorage.setItem("verity-ext-theme", next); } catch (_) {}
   });
 }
 
@@ -105,7 +105,7 @@ function toggleTheme() {
   if (hasExtensionApis()) {
     chrome.storage.sync.set({ theme: next });
   }
-  try { localStorage.setItem("ai-fc-ext-theme", next); } catch (_) {}
+  try { localStorage.setItem("verity-ext-theme", next); } catch (_) {}
 }
 
 function updateThemeIcon(theme) {

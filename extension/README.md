@@ -1,4 +1,4 @@
-# AI Fact Checker Chrome Extension
+# Verity Chrome Extension
 
 This is a separate Chrome Extension frontend for the existing Flask backend. The main web app still uses the original `/api/fact-check` and `/api/fact-check-image` routes. The extension uses `/api/extension/fact-check` so it can send richer browser context without changing the web app contract.
 
@@ -12,7 +12,7 @@ This is a separate Chrome Extension frontend for the existing Flask backend. The
 3. Enable "Developer mode".
 4. Click "Load unpacked".
 5. Select this `extension` folder.
-6. Browse to a social feed, open a post in view, then click the AI Fact Checker extension icon.
+6. Browse to a social feed, open a post in view, then click the Verity extension icon.
 
 The popup defaults to the production backend at `https://anindya-das-ai-fact-checker.vercel.app`. Use the settings button in the popup to point it at `http://localhost:5000` while developing locally.
 

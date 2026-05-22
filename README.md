@@ -1,6 +1,6 @@
-# AI Fact Checker — Seek the Truth
+# Verity — Seek the Truth
 
-AI Fact Checker is a tool I built to verify online claims, articles, and images. Instead of just guessing, it combines fast AI models with real-time web search to give you clear verdicts backed by cited evidence, helping to cut through the noise of online misinformation.
+Verity is a tool I built to verify online claims, articles, and images. Instead of just guessing, it combines fast AI models with real-time web search to give you clear verdicts backed by cited evidence, helping to cut through the noise of online misinformation.
 
 <p align="center">
   <img src="assets/screenshot1.png" width="45%" alt="Landing Page Light" />

@@ -1123,7 +1123,7 @@ def _reddit_post_from_json(data: Any) -> Optional[Dict[str, Any]]:
 def _extract_reddit_json(url: str) -> Optional[Dict[str, Any]]:
     headers = {
         **BROWSER_HEADERS,
-        "User-Agent": "AI-Fact-Checker/1.0 by u/ad_unboxthetech",
+        "User-Agent": "Verity/1.0 by u/ad_unboxthetech",
         "Accept": "application/json,text/html;q=0.9,*/*;q=0.8",
     }
     for json_url in _reddit_request_candidates(url):
@@ -1838,7 +1838,7 @@ class FactChecker:
             headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "User-Agent": "AI-Fact-Checker/1.0 (+https://anindya-das-ai-fact-checker.vercel.app)",
+                "User-Agent": "Verity/1.0 (+https://anindya-das-ai-fact-checker.vercel.app)",
                 "Authorization": f"Bearer {self.groq_api_key}",
             }
             model_failed = False

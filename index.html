@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="color-scheme" content="light dark" />
-  <title>AI Fact Checker - Verify Claims Instantly</title>
+  <title>Verity - Verify Claims Instantly</title>
 
   <!-- Icons and fonts -->
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet" />
@@ -16,7 +16,7 @@
     // Apply saved or system theme before paint to avoid flash
     (function () {
       try {
-        const stored = localStorage.getItem('ai-fc-theme');
+        const stored = localStorage.getItem('verity-theme');
         const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
         // Default to dark mode for better aesthetic
         const theme = stored || (prefersDark ? 'dark' : 'dark');
@@ -45,7 +45,7 @@
           <div class="brand-badge">
             <img id="brandLogo" src="assets/AD_logo.png" alt="Logo" class="brand-logo" loading="eager" onerror="this.onerror=null; this.src='assets/logo.png';" />
           </div>
-          <h1 class="app-title">AI Fact Checker</h1>
+          <h1 class="app-title">Verity</h1>
         </div>
 
         <button id="themeToggle" class="icon-btn glass-btn" aria-label="Toggle theme" title="Toggle light/dark">

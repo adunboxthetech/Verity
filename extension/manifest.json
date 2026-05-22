@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "AI Fact Checker",
+  "name": "Verity",
   "description": "Fact-check the social post currently visible in the active tab.",
   "version": "0.1.0",
   "action": {

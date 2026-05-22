@@ -1,7 +1,7 @@
 (() => {
   // Prevent duplicate execution
-  if (window.__aiFactCheckerThemeDetectorLoaded) return;
-  window.__aiFactCheckerThemeDetectorLoaded = true;
+  if (window.__verityThemeDetectorLoaded) return;
+  window.__verityThemeDetectorLoaded = true;
 
   function detectAndSendTheme() {
     // 1. Check system media query preference
@@ -47,7 +47,7 @@
         isDark = bodyTextLum >= 128;
       }
     } catch (e) {
-      console.error("[AI Fact Checker] Theme detection error:", e);
+      console.error("[Verity] Theme detection error:", e);
     }
     
     // Send message to background script
@@ -102,6 +102,6 @@
       });
     }
   } catch (e) {
-    console.error("[AI Fact Checker] MutationObserver setup failed:", e);
+    console.error("[Verity] MutationObserver setup failed:", e);
   }
 })();

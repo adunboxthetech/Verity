@@ -4,11 +4,11 @@ Verity is a tool I built to verify online claims, articles, and images. Instead 
 
 <p align="center">
   <img src="assets/screenshot1.png" width="45%" alt="Landing Page Light" />
-  <img src="assets/screenshot2.png" width="45%" alt="Landing Page Dark" />
+  <img src="assets/screenshot2.png" width="45%" alt="Loading Screen Light" />
 </p>
 <p align="center">
-  <img src="assets/screenshot3.png" width="45%" alt="Analysis Light" />
-  <img src="assets/screenshot4.png" width="45%" alt="Analysis Dark" />
+  <img src="assets/screenshot3.png" width="45%" alt="Loading Screen Dark" />
+  <img src="assets/screenshot4.png" width="45%" alt="Landing Page Dark" />
 </p>
 
 ## Features

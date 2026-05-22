@@ -183,8 +183,9 @@ h5,
     content: url("assets/AD_logo.png");
 }
 
-[data-theme="light"] .brand-logo {
-    content: url("assets/AD_logo_black.png");
+[data-theme="light"] .brand-badge {
+    background: #09090b;
+    border-color: rgba(255, 255, 255, 0.15);
 }
 
 .app-title {

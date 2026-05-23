@@ -18,6 +18,18 @@
       "use": "@vercel/static"
     },
     {
+      "src": "favicon.svg",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "favicon.ico",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "favicon.png",
+      "use": "@vercel/static"
+    },
+    {
       "src": "assets/*",
       "use": "@vercel/static"
     },

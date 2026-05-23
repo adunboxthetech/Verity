@@ -8,8 +8,8 @@
       <rect x="0" y="0" width="40" height="33.05" />
     </clipPath>
   </defs>
-  <!-- Scale down by 0.7 (70% size for consistent padding) and apply exact mathematical centering -->
-  <g transform="translate(4.635, 6.665) scale(0.7)">
+  <!-- Scale down by 0.7 (70% size for consistent padding) and shift left by a few pixels for visual alignment -->
+  <g transform="translate(3.135, 6.665) scale(0.7)">
     <!-- Left leg: Indigo brand color (#6366f1) -->
     <path fill="#6366f1" d="M 6 11 L 18 11 C 15 11, 15 13.5, 15 14 L 25 33 H 21.5 L 11.5 14 C 11.5 13.5, 11.5 11, 6 11 Z" />
     <!-- Right leg checkmark: silver-to-white gradient, clipped at bottom to align with left leg -->

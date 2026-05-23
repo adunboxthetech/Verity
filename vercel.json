@@ -30,6 +30,10 @@
       "use": "@vercel/static"
     },
     {
+      "src": "apple-touch-icon.png",
+      "use": "@vercel/static"
+    },
+    {
       "src": "assets/*",
       "use": "@vercel/static"
     },

@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" role="img" aria-label="Verity">
+  <defs>
+    <linearGradient id="check-light" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1f2937" />
+      <stop offset="50%" stop-color="#4b5563" />
+      <stop offset="100%" stop-color="#9ca3af" />
+    </linearGradient>
+    <linearGradient id="check-dark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="50%" stop-color="#cbd5e1" />
+      <stop offset="100%" stop-color="#6b7280" />
+    </linearGradient>
+    <style>
+      .v-body { fill: #1f2937; }
+      .v-check { stroke: url(#check-light); }
+      @media (prefers-color-scheme: dark) {
+        .v-body { fill: #f4f4f5; }
+        .v-check { stroke: url(#check-dark); }
+      }
+    </style>
+  </defs>
+  <path class="v-body" d="M 6 11 L 18 11 C 15 11, 15 13.5, 15 14 L 25 33 H 21.5 L 11.5 14 C 11.5 13.5, 11.5 11, 6 11 Z" />
+  <path class="v-check" d="M 23.25 33 L 36.5 6.5" stroke-width="2.8" stroke-linecap="round" fill="none" />
+</svg>

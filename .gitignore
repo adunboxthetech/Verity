@@ -54,6 +54,3 @@ node_modules/
 .antigravitycli/
 .chrome_profile*/
 
-# Agent configs
-.junie/
-

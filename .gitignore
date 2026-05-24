@@ -53,3 +53,7 @@ node_modules/
 # Local browser/tool profiles
 .antigravitycli/
 .chrome_profile*/
+
+# Agent configs
+.junie/
+

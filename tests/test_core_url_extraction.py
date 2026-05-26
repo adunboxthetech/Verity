@@ -219,6 +219,109 @@ class UrlExtractionTests(unittest.TestCase):
             ["https://bbc.com", "https://example.test/story"],
         )
 
+    def test_recent_number_claim_gets_query_variants(self):
+        queries = core._build_search_queries_for_claim(
+            "SynthID has already watermarked over 100 billion pieces of content"
+        )
+
+        self.assertGreaterEqual(len(queries), 3)
+        self.assertIn("latest official announcement", queries[-1])
+        self.assertTrue(any('"100 billion"' in query for query in queries))
+
+    def test_claim_domain_policy_prefers_medical_authorities(self):
+        domain = core._classify_claim_domain("COVID vaccines cause cancer")
+        authority_score, source_tier, source_notes = core._source_authority_score(
+            "https://www.cdc.gov/vaccines/example", domain
+        )
+
+        self.assertEqual(domain, "medical")
+        self.assertEqual(source_tier, "primary")
+        self.assertGreaterEqual(authority_score, 90)
+        self.assertIn("Official", source_notes)
+
+    def test_rank_search_sources_uses_domain_authority(self):
+        items = [
+            {
+                "url": "https://randomblog.example/vaccine-rumor",
+                "title": "Vaccine rumor",
+                "snippet": "A post claiming vaccines cause cancer.",
+            },
+            {
+                "url": "https://www.cdc.gov/vaccines/safety/index.html",
+                "title": "Vaccine Safety",
+                "snippet": "Official vaccine safety information.",
+            },
+        ]
+
+        ranked = core._rank_search_sources(
+            items,
+            2,
+            "COVID vaccines cause cancer",
+        )
+
+        self.assertEqual(
+            ranked[0]["url"],
+            "https://www.cdc.gov/vaccines/safety/index.html",
+        )
+        self.assertEqual(ranked[0]["claim_domain"], "medical")
+        self.assertEqual(ranked[0]["source_tier"], "primary")
+
+    def test_rank_search_sources_keeps_relevant_primary_social_result(self):
+        items = [
+            {
+                "url": "https://example-blog.test/synthid-10-billion",
+                "title": "SynthID reached 10 billion",
+                "snippet": "An older report about a previous milestone.",
+            },
+            {
+                "url": "https://x.com/GoogleDeepMind/status/2059235181274202500",
+                "title": "Google DeepMind on X",
+                "snippet": "SynthID has already watermarked over 100 billion pieces of content.",
+            },
+        ]
+
+        ranked = core._rank_search_sources(
+            items,
+            2,
+            "SynthID has already watermarked over 100 billion pieces of content",
+        )
+
+        self.assertEqual(
+            ranked[0]["url"],
+            "https://x.com/GoogleDeepMind/status/2059235181274202500",
+        )
+
+    @patch("api.core._gather_web_evidence_for_claims")
+    def test_refinement_receives_original_source_context(self, gather_evidence):
+        gather_evidence.return_value = {
+            "SynthID has already watermarked over 100 billion pieces of content": []
+        }
+        checker = core.FactChecker.__new__(core.FactChecker)
+        checker.last_text_error = ""
+        checker._post_api = lambda payload: None
+
+        results = [{
+            "claim": "SynthID has already watermarked over 100 billion pieces of content",
+            "result": {
+                "verdict": "FALSE",
+                "confidence": 95,
+                "explanation": "Older evidence says 10 billion.",
+                "sources": [],
+            },
+        }]
+
+        refined = checker.refine_results_with_web_evidence(
+            results,
+            source_urls=["https://x.com/GoogleDeepMind/status/2059235181274202500"],
+            source_context="SynthID has already watermarked over 100 billion pieces of content.",
+            source_title="Post by @GoogleDeepMind",
+        )
+
+        self.assertEqual(
+            refined[0]["result"]["sources"],
+            ["https://x.com/GoogleDeepMind/status/2059235181274202500"],
+        )
+
     def test_clean_sources_drops_google_grounding_redirects(self):
         cleaned = core._clean_sources(
             ["https://vertexaisearch.cloud.google.com/grounding-api-redirect/abc"],

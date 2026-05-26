@@ -42,7 +42,7 @@ class FakeChecker:
             }
         ]
 
-    def refine_results_with_web_evidence(self, results):
+    def refine_results_with_web_evidence(self, results, **kwargs):
         return results
 
     def _rate_limit_pause(self):

@@ -95,9 +95,10 @@ MAX_IMAGE_CLAIMS = 4
 MAX_IMAGES_TO_ANALYZE = 2
 MAX_CONCURRENT_IMAGE_REQUESTS = 1
 MAX_IMAGE_DOWNLOAD_BYTES = 8 * 1024 * 1024
-MAX_WEB_EVIDENCE_SOURCES = 5
+MAX_WEB_EVIDENCE_SOURCES = 8
 MAX_WEB_EVIDENCE_CLAIMS = 6
-MAX_WEB_EVIDENCE_FETCHES = 4
+MAX_WEB_EVIDENCE_FETCHES = 6
+MAX_SEARCH_QUERY_VARIANTS = 4
 WEB_SEARCH_TIMEOUT_SECONDS = 8
 WEB_EVIDENCE_FETCH_TIMEOUT_SECONDS = 6
 GEMINI_RETRY_ATTEMPTS = 1
@@ -273,6 +274,263 @@ def _is_social_source_url(url: str) -> bool:
         "youtube.com",
         "youtu.be",
     } or host.endswith(".reddit.com")
+
+
+def _is_low_quality_source_url(url: str) -> bool:
+    host = _source_host(url)
+    if not host:
+        return True
+    return (
+        host.endswith("pinterest.com")
+        or host.endswith("quora.com")
+        or host.endswith("medium.com")
+        or host in {"www.google.com", "google.com"}
+    )
+
+
+def _classify_claim_domain(claim: str) -> str:
+    text = _clean_text(claim).lower()
+    if re.search(
+        r"\b(vaccine|virus|covid|disease|doctor|hospital|medicine|medical|health|"
+        r"cancer|diabetes|infection|symptom|treatment|drug|fda|who|cdc|nhs)\b",
+        text,
+    ):
+        return "medical"
+    if re.search(
+        r"\b(stock|shares|revenue|profit|loss|earnings|market cap|ipo|sec|"
+        r"bank|rbi|inflation|gdp|interest rate|crypto|bitcoin|investment)\b",
+        text,
+    ):
+        return "finance"
+    if re.search(
+        r"\b(court|supreme court|law|legal|lawsuit|arrested|convicted|"
+        r"sentenced|police|fir|bail|judge|regulation|ban|act)\b",
+        text,
+    ):
+        return "legal"
+    if re.search(
+        r"\b(election|minister|government|parliament|policy|bill|president|"
+        r"prime minister|modi|biden|trump|pib|ministry|rbi|ec|eci)\b",
+        text,
+    ):
+        return "government_policy"
+    if re.search(
+        r"\b(announced|launch|launched|partnering|partnership|company|startup|"
+        r"model|ai|openai|google|deepmind|microsoft|apple|nvidia|product|"
+        r"watermarked|synthid)\b",
+        text,
+    ):
+        return "company_technology"
+    if re.search(
+        r"\b(study|research|paper|scientists|climate|temperature|earthquake|"
+        r"space|nasa|isro|moon|mars|satellite)\b",
+        text,
+    ):
+        return "science"
+    if re.search(
+        r"\b(match|score|goal|runs|wicket|ipl|cricket|football|nba|nfl|"
+        r"tournament|world cup|olympics)\b",
+        text,
+    ):
+        return "sports"
+    return "general_news"
+
+
+def _source_authority_score(url: str, claim_domain: str) -> Tuple[int, str, str]:
+    host = _source_host(url)
+    if not host:
+        return -100, "weak", "Missing or invalid source host."
+
+    official_exact = {
+        "medical": {
+            "who.int",
+            "cdc.gov",
+            "fda.gov",
+            "nih.gov",
+            "nhs.uk",
+            "mayoclinic.org",
+        },
+        "finance": {
+            "sec.gov",
+            "rbi.org.in",
+            "sebi.gov.in",
+            "worldbank.org",
+            "imf.org",
+            "investor.gov",
+        },
+        "legal": {
+            "supremecourt.gov",
+            "sci.gov.in",
+            "indiacode.nic.in",
+            "justice.gov",
+            "law.cornell.edu",
+        },
+        "government_policy": {
+            "pib.gov.in",
+            "india.gov.in",
+            "eci.gov.in",
+            "rbi.org.in",
+            "parliamentofindia.nic.in",
+            "whitehouse.gov",
+        },
+        "science": {
+            "nasa.gov",
+            "isro.gov.in",
+            "nature.com",
+            "science.org",
+            "arxiv.org",
+            "pubmed.ncbi.nlm.nih.gov",
+        },
+        "sports": {
+            "espn.com",
+            "icc-cricket.com",
+            "fifa.com",
+            "nba.com",
+            "nfl.com",
+            "olympics.com",
+        },
+    }
+    official_contains = {
+        "company_technology": {
+            "openai.com",
+            "deepmind.google",
+            "googleblog.com",
+            "blog.google",
+            "microsoft.com",
+            "apple.com",
+            "nvidia.com",
+            "anthropic.com",
+            "meta.com",
+        }
+    }
+    reputable_news = {
+        "reuters.com",
+        "apnews.com",
+        "bbc.com",
+        "bbc.co.uk",
+        "thehindu.com",
+        "indianexpress.com",
+        "techcrunch.com",
+        "theverge.com",
+        "bloomberg.com",
+        "ft.com",
+    }
+
+    if _is_low_quality_source_url(url):
+        return -60, "weak", "Low-authority or user-generated source for fact-checking."
+    if host.endswith((".gov", ".gov.in", ".nic.in")):
+        return 90, "primary", "Official government or regulator source."
+    if host.endswith(".edu"):
+        return 72, "high", "Academic or educational institution source."
+    if host in official_exact.get(claim_domain, set()):
+        return 92, "primary", f"Top-priority source for {claim_domain} claims."
+    if any(token in host for token in official_contains.get(claim_domain, set())):
+        return 88, "primary", f"Official organization source for {claim_domain} claims."
+    if host in reputable_news or any(host.endswith(f".{news}") for news in reputable_news):
+        return 64, "reputable", "Reputable reporting source."
+    if _is_social_source_url(url):
+        if claim_domain == "company_technology":
+            return 58, "primary_if_verified", "Can be primary evidence for current official announcements if the account is verified or official."
+        return 30, "context", "Social source; useful for the original claim but weak without corroboration."
+    if host.endswith(".org"):
+        return 45, "moderate", "Organization source; credibility depends on relevance and expertise."
+    return 20, "unknown", "No domain-specific authority signal."
+
+
+def _source_policy_for_domain(claim_domain: str) -> str:
+    policies = {
+        "medical": "Medical claims require official health agencies, peer-reviewed research, or major medical institutions; social posts and blogs are weak unless they quote primary evidence.",
+        "finance": "Finance claims require regulator filings, official company disclosures, central banks, market data, or reputable financial reporting.",
+        "legal": "Legal claims require court records, statutes, regulator/police statements, or reputable reporting that cites those records.",
+        "government_policy": "Government and policy claims require official government/ministry/regulator/election/court sources first, then reputable news.",
+        "company_technology": "Company and technology announcement claims prefer official company blogs, press releases, regulator filings, or verified official social posts, then reputable tech/business reporting.",
+        "science": "Science claims prefer papers, official research bodies, universities, NASA/ISRO-like agencies, or reputable science reporting that links to research.",
+        "sports": "Sports claims prefer official league/team/tournament scoreboards and established sports outlets.",
+        "general_news": "General news claims prefer primary documents, named official statements, and reputable reporting over blogs or social reposts.",
+    }
+    return policies.get(claim_domain, policies["general_news"])
+
+
+def _extract_claim_terms(text: str) -> List[str]:
+    cleaned = _clean_search_query(text, max_chars=240).lower()
+    words = re.findall(r"[a-z][a-z0-9&.-]{2,}", cleaned)
+    stopwords = {
+        "the",
+        "and",
+        "for",
+        "with",
+        "that",
+        "this",
+        "from",
+        "over",
+        "under",
+        "already",
+        "have",
+        "has",
+        "had",
+        "been",
+        "will",
+        "would",
+        "could",
+        "should",
+        "their",
+        "about",
+        "into",
+        "than",
+        "then",
+        "they",
+        "them",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "while",
+        "because",
+    }
+    return _dedupe([word for word in words if word not in stopwords])
+
+
+def _source_relevance_score(source: Dict[str, str], query: str) -> int:
+    url = source.get("url", "")
+    host = _source_host(url)
+    title = source.get("title", "")
+    snippet = source.get("snippet", "")
+    haystack = f"{host} {title} {snippet}".lower()
+    terms = _extract_claim_terms(query)
+    claim_domain = source.get("claim_domain") or _classify_claim_domain(query)
+    authority_score, _, _ = _source_authority_score(url, claim_domain)
+    score = authority_score
+
+    if _is_low_quality_source_url(url):
+        score -= 80
+    if _is_social_source_url(url):
+        score += 12
+    if host.endswith((".gov", ".edu")):
+        score += 28
+    if host.endswith(".org"):
+        score += 10
+    if any(token in host for token in ("reuters", "apnews", "bbc", "techcrunch")):
+        score += 12
+
+    for term in terms:
+        if term in host:
+            score += 10
+        if term in title.lower():
+            score += 7
+        if term in snippet.lower():
+            score += 4
+
+    if re.search(r"\b(official|announced|statement|press release|blog)\b", haystack):
+        score += 8
+    if re.search(r"\b\d{4}\b", query):
+        for year in re.findall(r"\b\d{4}\b", query):
+            if year in haystack:
+                score += 8
+    if re.search(r"\b(latest|today|breaking|now|current|announced)\b", haystack):
+        score += 5
+
+    return score
 
 
 def _extract_grounding_sources(response_data: Dict[str, Any]) -> List[str]:
@@ -789,21 +1047,85 @@ def _clean_search_query(text: str, max_chars: int = 160) -> str:
     return text[:max_chars].rsplit(" ", 1)[0].strip()
 
 
+def _quote_search_query(text: str) -> str:
+    text = _clean_search_query(text, max_chars=140)
+    text = text.replace('"', " ")
+    text = re.sub(r"\s+", " ", text).strip()
+    return f'"{text}"' if text else ""
+
+
+def _build_search_queries_for_claim(claim: str) -> List[str]:
+    clean = _clean_search_query(claim, max_chars=180)
+    if not clean:
+        return []
+    current_year = datetime.date.today().year
+    claim_domain = _classify_claim_domain(clean)
+    queries = [clean]
+
+    if len(clean.split()) <= 18:
+        queries.append(_quote_search_query(clean))
+
+    numbers = re.findall(r"\b\d[\d,]*(?:\.\d+)?\s*(?:billion|million|trillion|%|percent)?\b", clean, flags=re.I)
+    if numbers:
+        terms = _extract_claim_terms(clean)
+        focused_terms = " ".join(terms[:8])
+        quoted_numbers = " ".join(f'"{number.strip()}"' for number in numbers[:2])
+        if focused_terms and quoted_numbers:
+            queries.append(f"{focused_terms} {quoted_numbers}")
+
+    domain_modifiers = {
+        "medical": "official WHO CDC FDA study",
+        "finance": "official filing regulator latest",
+        "legal": "official court law document",
+        "government_policy": "official government ministry PIB",
+        "company_technology": "official announcement press release",
+        "science": "official research paper study",
+        "sports": "official score result",
+    }
+    queries.append(
+        f"{clean} {current_year} latest {domain_modifiers.get(claim_domain, 'official')}"
+    )
+    return [query for query in _dedupe(queries) if query][:MAX_SEARCH_QUERY_VARIANTS]
+
+
 def _claim_key(text: str) -> str:
     return _clean_text(re.sub(r"^\[Image\]\s*", "", text or "", flags=re.I)).lower()
 
 
 def _rank_search_sources(
-    items: List[Dict[str, str]], max_results: int
+    items: List[Dict[str, str]], max_results: int, query: str = ""
 ) -> List[Dict[str, str]]:
-    social = [item for item in items if _is_social_source_url(item.get("url", ""))]
-    nonsocial = [
-        item for item in items if not _is_social_source_url(item.get("url", ""))
-    ]
-    ordered = nonsocial or social
-    deduped_urls = _dedupe_sources([item["url"] for item in ordered], max_results)
-    by_url = {item["url"]: item for item in ordered}
-    return [by_url[url] for url in deduped_urls if url in by_url]
+    claim_domain = _classify_claim_domain(query)
+    deduped: List[Dict[str, str]] = []
+    seen = set()
+    for item in items:
+        url = _normalize_source_url(item.get("url", ""))
+        if not url or _is_google_grounding_redirect(url):
+            continue
+        key = _source_key(url)
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized_item = dict(item)
+        normalized_item["url"] = url
+        authority_score, source_tier, source_notes = _source_authority_score(
+            url, claim_domain
+        )
+        normalized_item["claim_domain"] = claim_domain
+        normalized_item["source_tier"] = source_tier
+        normalized_item["source_authority_score"] = str(authority_score)
+        normalized_item["source_notes"] = source_notes
+        deduped.append(normalized_item)
+
+    indexed = list(enumerate(deduped))
+    indexed.sort(
+        key=lambda pair: (
+            _source_relevance_score(pair[1], query),
+            -pair[0],
+        ),
+        reverse=True,
+    )
+    return [item for _, item in indexed[:max_results]]
 
 
 def _search_duckduckgo_sources(query: str, max_results: int) -> List[Dict[str, str]]:
@@ -836,7 +1158,7 @@ def _search_duckduckgo_sources(query: str, max_results: int) -> List[Dict[str, s
             items.append({"url": url, "title": title, "snippet": snippet})
             if len(items) >= max_results * 2:
                 break
-        return _rank_search_sources(items, max_results)
+        return _rank_search_sources(items, max_results, query)
     except Exception:
         return []
 
@@ -871,7 +1193,7 @@ def _search_bing_sources(query: str, max_results: int) -> List[Dict[str, str]]:
             items.append({"url": url, "title": title, "snippet": snippet})
             if len(items) >= max_results * 2:
                 break
-        return _rank_search_sources(items, max_results)
+        return _rank_search_sources(items, max_results, query)
     except Exception:
         return []
 
@@ -906,7 +1228,7 @@ def _search_yahoo_sources(query: str, max_results: int) -> List[Dict[str, str]]:
             items.append({"url": url, "title": title, "snippet": snippet})
             if len(items) >= max_results * 2:
                 break
-        return _rank_search_sources(items, max_results)
+        return _rank_search_sources(items, max_results, query)
     except Exception:
         return []
 
@@ -920,13 +1242,8 @@ def _search_web_sources(
         _search_bing_sources,
         _search_yahoo_sources,
     ):
-        if (
-            len(_dedupe_sources([item["url"] for item in combined], max_results))
-            >= max_results
-        ):
-            break
         combined.extend(search_fn(query, max_results))
-    return _rank_search_sources(combined, max_results)
+    return _rank_search_sources(combined, max_results, query)
 
 
 def _fetch_evidence_page_summary(source: Dict[str, str]) -> Dict[str, str]:
@@ -959,8 +1276,20 @@ def _fetch_evidence_page_summary(source: Dict[str, str]) -> Dict[str, str]:
     return source
 
 
+def _source_to_evidence_item(url: str) -> Optional[Dict[str, str]]:
+    normalized = _normalize_source_url(url)
+    if not normalized:
+        return None
+    return {
+        "url": normalized,
+        "title": "Original source",
+        "snippet": "Primary source supplied with the claim.",
+    }
+
+
 def _gather_web_evidence_for_claims(
     claims: List[str],
+    source_urls_by_claim: Optional[Dict[str, List[str]]] = None,
 ) -> Dict[str, List[Dict[str, str]]]:
     clean_claims = [
         _clean_search_query(claim) for claim in claims if _clean_search_query(claim)
@@ -970,17 +1299,37 @@ def _gather_web_evidence_for_claims(
         return {}
 
     evidence: Dict[str, List[Dict[str, str]]] = {}
-    with ThreadPoolExecutor(max_workers=min(4, len(clean_claims))) as executor:
-        futures = {
-            executor.submit(_search_web_sources, claim): claim for claim in clean_claims
-        }
-        for future in as_completed(futures):
-            claim = futures[future]
-            try:
-                sources = future.result() or []
-            except Exception:
-                sources = []
-            evidence[claim] = sources
+    searches: List[Tuple[str, str]] = []
+    for claim in clean_claims:
+        for query in _build_search_queries_for_claim(claim):
+            searches.append((claim, query))
+
+    if searches:
+        with ThreadPoolExecutor(max_workers=min(8, len(searches))) as executor:
+            futures = {
+                executor.submit(_search_web_sources, query): (claim, query)
+                for claim, query in searches
+            }
+            for future in as_completed(futures):
+                claim, query = futures[future]
+                try:
+                    sources = future.result() or []
+                except Exception:
+                    sources = []
+                evidence.setdefault(claim, []).extend(sources)
+
+    source_urls_by_claim = source_urls_by_claim or {}
+    for claim in clean_claims:
+        seeded = [
+            item
+            for url in source_urls_by_claim.get(claim, [])
+            for item in [_source_to_evidence_item(url)]
+            if item
+        ]
+        combined = seeded + evidence.get(claim, [])
+        evidence[claim] = _rank_search_sources(
+            combined, MAX_WEB_EVIDENCE_SOURCES, claim
+        )
 
     fetch_candidates: List[Tuple[str, Dict[str, str]]] = []
     for claim, sources in evidence.items():
@@ -2257,7 +2606,11 @@ class FactChecker:
         return results
 
     def refine_results_with_web_evidence(
-        self, results: List[Dict[str, Any]]
+        self,
+        results: List[Dict[str, Any]],
+        source_urls: Optional[List[str]] = None,
+        source_context: str = "",
+        source_title: str = "",
     ) -> List[Dict[str, Any]]:
         """Search the public web for each claim and rerank/rewrite verdicts against evidence snippets."""
         self.last_text_error = ""
@@ -2266,7 +2619,31 @@ class FactChecker:
             for item in results[:MAX_WEB_EVIDENCE_CLAIMS]
             if isinstance(item, dict) and item.get("claim")
         ]
-        evidence_by_claim = _gather_web_evidence_for_claims(claims)
+        source_urls_by_claim = {
+            claim: _clean_sources(source_urls or []) for claim in claims
+        }
+        evidence_by_claim = _gather_web_evidence_for_claims(
+            claims, source_urls_by_claim=source_urls_by_claim
+        )
+        seeded_source_items = []
+        for source_url in _clean_sources(source_urls or []):
+            seeded_source_items.append(
+                {
+                    "url": source_url,
+                    "title": source_title or "Original source",
+                    "snippet": _truncate(
+                        source_context or "Primary source supplied with the claim.",
+                        900,
+                    ),
+                }
+            )
+        if seeded_source_items:
+            for claim in claims:
+                evidence_by_claim[claim] = _rank_search_sources(
+                    seeded_source_items + evidence_by_claim.get(claim, []),
+                    MAX_WEB_EVIDENCE_SOURCES,
+                    claim,
+                )
         if not any(evidence_by_claim.values()):
             return results
 
@@ -2282,9 +2659,12 @@ class FactChecker:
             evidence = evidence_by_claim.get(clean_claim, [])
             if not evidence:
                 continue
+            claim_domain = _classify_claim_domain(item["claim"])
             evidence_payload.append(
                 {
                     "claim": item["claim"],
+                    "claim_domain": claim_domain,
+                    "source_policy": _source_policy_for_domain(claim_domain),
                     "current_verdict": item.get("result", {}).get("verdict"),
                     "current_explanation": item.get("result", {}).get("explanation"),
                     "evidence": evidence[:MAX_WEB_EVIDENCE_SOURCES],
@@ -2298,9 +2678,13 @@ class FactChecker:
         prompt = (
             f"Today's date is {current_date}. You are a careful fact-checking editor. "
             "Re-check each claim using the provided public web evidence snippets. "
-            "Prefer independent reporting, official sources, and primary documents over the original social post. "
+            "Use the claim_domain, source_policy, source_tier, source_authority_score, and source_notes fields to decide which evidence deserves more weight. "
+            "Prefer primary documents, official statements, domain-specific authorities, and reputable reporting. "
+            "For current announcements, a verified original post or official company/government post can be strong primary evidence; do not dismiss it merely because it is social media. "
+            "Check dates carefully and prefer the newest directly relevant source when older sources report earlier milestones or figures. "
             "CRITICAL: Verify that each claim accurately represents what the original text actually stated. "
-            "Watch for partial name matches — e.g., evidence about 'Claude' (an AI model) does NOT verify a claim about 'Claude Monet' (a painter), and vice versa. "
+            "Watch for partial name matches, stale numbers, and same-topic-but-wrong-date evidence. "
+            "Do not let low-tier or unknown-tier sources override stronger primary/high/reputable sources unless they provide direct, checkable evidence. "
             "If the claim text appears to have been incorrectly extracted (names truncated, entities confused), mark it FALSE or UNVERIFIABLE, not TRUE. "
             "If the evidence supports the claim, mark TRUE. If it contradicts the claim, mark FALSE or PARTIALLY TRUE. "
             "If the evidence is weak, missing, circular, or only repeats the same social post, mark INSUFFICIENT EVIDENCE. "
@@ -2634,7 +3018,11 @@ def fact_check_image_input(
         image_url=image_url, image_data_url=image_data_url
     )
     if results and hasattr(checker, "refine_results_with_web_evidence"):
-        results = checker.refine_results_with_web_evidence(results)
+        results = checker.refine_results_with_web_evidence(
+            results,
+            source_urls=[image_url] if image_url else None,
+            source_context="Image submitted by the user for fact-checking.",
+        )
     image_analysis_error = checker.last_image_error
 
     response = {
@@ -2756,10 +3144,15 @@ def fact_check_url_input(url: str) -> Tuple[Dict[str, Any], int]:
                     ):
                         results.append(item)
 
-    if results and hasattr(checker, "refine_results_with_web_evidence"):
-        results = checker.refine_results_with_web_evidence(results)
-
     source_fallback = _clean_sources([url])
+    if results and hasattr(checker, "refine_results_with_web_evidence"):
+        results = checker.refine_results_with_web_evidence(
+            results,
+            source_urls=source_fallback,
+            source_context=text,
+            source_title=title,
+        )
+
     for item in results:
         result = item.get("result") if isinstance(item, dict) else None
         if isinstance(result, dict):
@@ -2915,7 +3308,12 @@ def fact_check_extension_post_input(
         image_analysis_error = checker.last_image_error
 
     if results and hasattr(checker, "refine_results_with_web_evidence"):
-        results = checker.refine_results_with_web_evidence(results)
+        results = checker.refine_results_with_web_evidence(
+            results,
+            source_urls=source_fallback,
+            source_context=text,
+            source_title=_clean_text(str(payload.get("title") or "")),
+        )
 
     for item in results:
         result = item.get("result") if isinstance(item, dict) else None

@@ -2,7 +2,7 @@ import os
 import time
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request
+from flask import Flask, abort, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 # Load environment variables before importing core utilities
@@ -24,9 +24,6 @@ from api.core import (
 app = Flask(__name__)
 CORS(app)
 
-
-import mimetypes
-
 ALLOWED_EXTENSIONS = {
     ".html",
     ".css",
@@ -46,17 +43,11 @@ ALLOWED_EXTENSIONS = {
 
 @app.route("/")
 def home():
-    from flask import send_from_directory
-
     return send_from_directory(".", "index.html")
 
 
 @app.route("/<path:filename>")
 def serve_static(filename):
-    import os
-
-    from flask import abort, send_from_directory
-
     ext = os.path.splitext(filename)[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         abort(404)

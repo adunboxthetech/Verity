@@ -393,6 +393,39 @@ def is_valid_url(url: str) -> bool:
         return False
 
 
+def _safe_request(method: str, url: str, max_redirects: int = 5, **kwargs):
+    """Make an HTTP request while rejecting redirects to unsupported URLs."""
+    method = method.lower()
+    request_fn = getattr(requests, method)
+    current_url = normalize_url(url)
+    if not is_valid_url(current_url):
+        raise ValueError("Invalid URL. Only public http(s) URLs are supported.")
+
+    kwargs.pop("allow_redirects", None)
+    for _ in range(max_redirects + 1):
+        response = request_fn(current_url, allow_redirects=False, **kwargs)
+        is_redirect = getattr(response, "is_redirect", False) or response.status_code in {
+            301,
+            302,
+            303,
+            307,
+            308,
+        }
+        if not is_redirect:
+            return response
+
+        location = response.headers.get("Location")
+        if not location:
+            return response
+
+        next_url = urljoin(current_url, location)
+        if not is_valid_url(next_url):
+            raise ValueError("Redirect target is not a public http(s) URL.")
+        current_url = next_url
+
+    raise ValueError("Too many redirects.")
+
+
 def _clean_text(text: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", text or "").split())
 
@@ -457,11 +490,9 @@ def _remote_url_is_image(url: str) -> bool:
             **DEFAULT_HEADERS,
             "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
         }
-        resp = requests.head(url, headers=headers, allow_redirects=True, timeout=6)
+        resp = _safe_request("head", url, headers=headers, timeout=6)
         if resp.status_code in {405, 403} or resp.status_code >= 500:
-            resp = requests.get(
-                url, headers=headers, allow_redirects=True, timeout=6, stream=True
-            )
+            resp = _safe_request("get", url, headers=headers, timeout=6, stream=True)
         return resp.status_code < 400 and _is_image_content_type(
             resp.headers.get("Content-Type", "")
         )
@@ -505,7 +536,7 @@ def _download_image_as_data_url(
             **DEFAULT_HEADERS,
             "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
         }
-        resp = requests.get(url, headers=headers, timeout=15, stream=True)
+        resp = _safe_request("get", url, headers=headers, timeout=15, stream=True)
         resp.raise_for_status()
         content_type = (
             resp.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
@@ -668,7 +699,7 @@ def _looks_blocked(text: str) -> bool:
 
 
 def _fetch_html(url: str) -> Tuple[str, str, str]:
-    resp = requests.get(url, headers=DEFAULT_HEADERS, timeout=12)
+    resp = _safe_request("get", url, headers=DEFAULT_HEADERS, timeout=12)
     resp.raise_for_status()
     content_type = resp.headers.get("Content-Type", "")
     if not _is_html_content_type(content_type):
@@ -903,8 +934,11 @@ def _fetch_evidence_page_summary(source: Dict[str, str]) -> Dict[str, str]:
     if not url or _is_social_source_url(url):
         return source
     try:
-        resp = requests.get(
-            url, headers=DEFAULT_HEADERS, timeout=WEB_EVIDENCE_FETCH_TIMEOUT_SECONDS
+        resp = _safe_request(
+            "get",
+            url,
+            headers=DEFAULT_HEADERS,
+            timeout=WEB_EVIDENCE_FETCH_TIMEOUT_SECONDS,
         )
         if resp.status_code >= 400 or not _is_html_content_type(
             resp.headers.get("Content-Type", "")
@@ -2584,6 +2618,10 @@ def fact_check_text_input(text: str) -> Tuple[Dict[str, Any], int]:
 def fact_check_image_input(
     image_data_url: Optional[str], image_url: Optional[str]
 ) -> Tuple[Dict[str, Any], int]:
+    image_url = normalize_url(image_url or "") if image_url else None
+    if image_url and not is_valid_url(image_url):
+        return {"error": "Invalid image URL. Only public http(s) URLs are supported."}, 400
+
     checker, checker_error = _get_checker()
     if checker is None:
         return {"error": checker_error or "No AI provider API key configured"}, 500
@@ -2773,7 +2811,7 @@ def _clean_extension_image_urls(value: Any) -> List[str]:
         if not isinstance(item, str):
             continue
         normalized = _normalize_source_url(item)
-        if normalized:
+        if normalized and is_valid_url(normalized):
             urls.append(normalized)
     return _dedupe_sources(urls, limit=5)
 
@@ -2817,6 +2855,8 @@ def fact_check_extension_post_input(
     text = _clean_text(str(payload.get("text") or ""))
     image_urls = _clean_extension_image_urls(payload.get("image_urls"))
     image_url = _normalize_source_url(str(payload.get("image_url") or ""))
+    if image_url and not is_valid_url(image_url):
+        image_url = ""
     if not image_url and image_urls:
         image_url = image_urls[0]
     screenshot_data_url = payload.get("screenshot_data_url")

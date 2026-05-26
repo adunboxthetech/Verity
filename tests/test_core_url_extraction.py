@@ -113,6 +113,25 @@ class UrlExtractionTests(unittest.TestCase):
     def test_private_url_is_rejected(self):
         self.assertFalse(core.is_valid_url("http://127.0.0.1:5000/health"))
 
+    @patch("api.core.requests.get")
+    def test_fetch_html_rejects_redirect_to_private_url(self, requests_get):
+        class FakeRedirect:
+            status_code = 302
+            headers = {"Location": "http://127.0.0.1:5000/health"}
+
+        requests_get.return_value = FakeRedirect()
+
+        with self.assertRaises(ValueError):
+            core._fetch_html("https://example.test/article")
+
+    @patch("api.core._get_checker")
+    def test_image_fact_check_rejects_private_image_url_before_checker(self, get_checker):
+        response, status = core.fact_check_image_input(None, "http://127.0.0.1/image.png")
+
+        self.assertEqual(status, 400)
+        self.assertIn("Invalid image URL", response["error"])
+        get_checker.assert_not_called()
+
     def test_styled_unicode_headline_is_normalized_as_claim_signal(self):
         text = "🚨 𝗧𝗶𝘁𝗮𝗴𝗮𝗿𝗵 𝘁𝗼 𝗺𝗮𝗻𝘂𝗳𝗮𝗰𝘁𝘂𝗿𝗲 𝗯𝘂𝗹𝗹𝗲𝘁 𝘁𝗿𝗮𝗶𝗻𝘀 𝗶𝗻 𝗕𝗲𝗻𝗴𝗮𝗹."
 

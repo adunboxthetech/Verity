@@ -108,7 +108,6 @@ class FactCheckerApp {
         const reader = new FileReader();
         reader.onload = () => {
             this.imageDataUrl = reader.result;
-            console.log('Image loaded, size:', this.imageDataUrl.length, 'characters');
             this.renderImagePreview(this.imageDataUrl);
         };
         reader.readAsDataURL(file);
@@ -141,8 +140,6 @@ class FactCheckerApp {
         });
         this.updateFactCheckButtonState();
     }
-
-    async handleAnalyzeImage() { /* deprecated - unified into handleFactCheck */ }
 
     initializeTheme() {
         const html = document.documentElement;
@@ -235,22 +232,14 @@ class FactCheckerApp {
         try {
             let response;
             if (hasImage) {
-                console.log('Sending image for analysis...');
                 const payload = { image_data_url: this.imageDataUrl };
-                console.log('Payload size:', JSON.stringify(payload).length, 'characters');
-
                 const url = `${this.apiUrl}/fact-check-image`;
-                console.log('Calling URL:', url);
-                console.log('API URL base:', this.apiUrl);
 
                 response = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-
-                console.log('Response status:', response.status);
-                console.log('Response headers:', Object.fromEntries(response.headers.entries()));
             } else {
                 const payload = this.buildPayload(text);
                 response = await fetch(`${this.apiUrl}/fact-check`, {
@@ -267,8 +256,6 @@ class FactCheckerApp {
             }
 
             const data = await response.json();
-            console.log('Response data:', data);
-
             this.displayResults(data);
         } catch (error) {
             console.error('Fact-check error:', error);
@@ -354,13 +341,14 @@ class FactCheckerApp {
 
         this.resultsContainer.innerHTML = '';
 
-        if (data.source_url) {
+        if (data.source_url && this.isSafeHttpUrl(data.source_url)) {
+            const safeSourceUrl = this.escapeAttribute(data.source_url);
             const src = document.createElement('div');
             src.className = 'source-banner';
             src.innerHTML = `
                 <i class="fas fa-link"></i>
                 <span>Source:</span>
-                <a href="${data.source_url}" target="_blank" rel="noopener">${data.source_url}</a>
+                <a href="${safeSourceUrl}" target="_blank" rel="noopener">${this.escapeHtml(data.source_url)}</a>
             `;
             this.resultsContainer.appendChild(src);
             if (data.source_title) {
@@ -368,7 +356,7 @@ class FactCheckerApp {
                 title.style.margin = '6px 0 10px';
                 title.style.color = 'var(--muted)';
                 title.style.fontSize = '0.95rem';
-                title.innerHTML = `<i class="fas fa-file-lines"></i> <strong>Title:</strong> ${data.source_title}`;
+                title.innerHTML = `<i class="fas fa-file-lines"></i> <strong>Title:</strong> ${this.escapeHtml(data.source_title)}`;
                 this.resultsContainer.appendChild(title);
             }
             if (typeof data.images_detected === 'number' && data.images_detected >= 0) {
@@ -407,7 +395,7 @@ class FactCheckerApp {
                 }
             }
             const selected = data.selected_image_url || (Array.isArray(data.debug_image_urls) && data.debug_image_urls.length ? data.debug_image_urls[0] : null);
-            if (selected) {
+            if (selected && this.isSafeHttpUrl(selected)) {
                 const thumbWrap = document.createElement('div');
                 thumbWrap.style.margin = '6px 0 14px';
                 thumbWrap.innerHTML = `
@@ -693,13 +681,14 @@ class FactCheckerApp {
         if (!Array.isArray(sources) || sources.length === 0) return '';
         const items = sources
             .map(s => typeof s === 'string' ? s.trim() : '')
-            .filter(Boolean)
+            .filter(url => url && this.isSafeHttpUrl(url))
             .map((url, i) => {
                 const safeUrl = this.escapeAttribute(url);
-                const label = this.humanizeSource(url, i + 1);
+                const label = this.escapeHtml(this.humanizeSource(url, i + 1));
                 return `<a href="${safeUrl}" target="_blank" rel="noopener" class="source-link">${label}</a>`;
             })
             .join(', ');
+        if (!items) return '';
         return `
             <div class="sources">
                 <i class="fas fa-link"></i>
@@ -710,6 +699,15 @@ class FactCheckerApp {
 
     escapeAttribute(str) {
         return this.escapeHtml(str).replaceAll('"', '&quot;');
+    }
+
+    isSafeHttpUrl(url) {
+        try {
+            const parsed = new URL(url);
+            return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+        } catch (_) {
+            return false;
+        }
     }
 
     humanizeSource(url, index) {

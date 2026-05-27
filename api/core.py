@@ -95,10 +95,10 @@ MAX_IMAGE_CLAIMS = 4
 MAX_IMAGES_TO_ANALYZE = 2
 MAX_CONCURRENT_IMAGE_REQUESTS = 1
 MAX_IMAGE_DOWNLOAD_BYTES = 8 * 1024 * 1024
-MAX_WEB_EVIDENCE_SOURCES = 8
+MAX_WEB_EVIDENCE_SOURCES = 10
 MAX_WEB_EVIDENCE_CLAIMS = 6
-MAX_WEB_EVIDENCE_FETCHES = 6
-MAX_SEARCH_QUERY_VARIANTS = 4
+MAX_WEB_EVIDENCE_FETCHES = 8
+MAX_SEARCH_QUERY_VARIANTS = 10
 WEB_SEARCH_TIMEOUT_SECONDS = 8
 WEB_EVIDENCE_FETCH_TIMEOUT_SECONDS = 6
 GEMINI_RETRY_ATTEMPTS = 1
@@ -310,7 +310,9 @@ def _classify_claim_domain(claim: str) -> str:
         return "legal"
     if re.search(
         r"\b(election|minister|government|parliament|policy|bill|president|"
-        r"prime minister|modi|biden|trump|pib|ministry|rbi|ec|eci)\b",
+        r"prime minister|modi|biden|trump|pib|ministry|rbi|ec|eci|"
+        r"scheme|yojana|beneficiary|beneficiaries|application|apply|form|"
+        r"portal|bhandar|bangla|bengal|west bengal|chief minister)\b",
         text,
     ):
         return "government_policy"
@@ -410,6 +412,13 @@ def _source_authority_score(url: str, claim_domain: str) -> Tuple[int, str, str]
         "bbc.co.uk",
         "thehindu.com",
         "indianexpress.com",
+        "indiatoday.in",
+        "timesofindia.indiatimes.com",
+        "economictimes.indiatimes.com",
+        "livemint.com",
+        "cnbctv18.com",
+        "aajtak.in",
+        "bangla.aajtak.in",
         "techcrunch.com",
         "theverge.com",
         "bloomberg.com",
@@ -1054,6 +1063,21 @@ def _quote_search_query(text: str) -> str:
     return f'"{text}"' if text else ""
 
 
+def _extract_search_subject(text: str) -> str:
+    clean = _clean_search_query(text, max_chars=120)
+    patterns = [
+        r"\b([a-z][a-z0-9'.-]*(?:\s+[a-z][a-z0-9'.-]*){0,3}\s+bhandar)\b",
+        r"\b([a-z][a-z0-9'.-]*(?:\s+[a-z][a-z0-9'.-]*){0,3}\s+yojana)\b",
+        r"\b([a-z][a-z0-9'.-]*(?:\s+[a-z][a-z0-9'.-]*){0,3}\s+scheme)\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, clean, flags=re.I)
+        if match:
+            return _clean_text(match.group(1))
+    terms = _extract_claim_terms(clean)
+    return " ".join(terms[:5])
+
+
 def _build_search_queries_for_claim(claim: str) -> List[str]:
     clean = _clean_search_query(claim, max_chars=180)
     if not clean:
@@ -1077,7 +1101,7 @@ def _build_search_queries_for_claim(claim: str) -> List[str]:
         "medical": "official WHO CDC FDA study",
         "finance": "official filing regulator latest",
         "legal": "official court law document",
-        "government_policy": "official government ministry PIB",
+        "government_policy": "official government ministry latest news",
         "company_technology": "official announcement press release",
         "science": "official research paper study",
         "sports": "official score result",
@@ -1085,6 +1109,32 @@ def _build_search_queries_for_claim(claim: str) -> List[str]:
     queries.append(
         f"{clean} {current_year} latest {domain_modifiers.get(claim_domain, 'official')}"
     )
+    subject = _extract_search_subject(clean)
+    if subject and subject.lower() != clean.lower():
+        if re.search(r"\b(form|fill ?up|application|apply|online|portal)\b", clean, flags=re.I):
+            queries.extend(
+                [
+                    f"{subject} form fill up started today news",
+                    f"{subject} forms issued today news",
+                    f"{subject} application process starts today",
+                    f"{subject} apply online latest news {current_year}",
+                ]
+            )
+    if claim_domain == "government_policy":
+        scheme_hint = ""
+        if re.search(r"\b(annapurna|lakshmir?|bhandar|bangla|bengal|west bengal)\b", clean, flags=re.I):
+            scheme_hint = " West Bengal"
+        queries.extend(
+            [
+                f"{clean}{scheme_hint} application process begins {current_year}",
+                f"{clean}{scheme_hint} forms issued online offline {current_year}",
+                f"{clean}{scheme_hint} apply online latest news {current_year}",
+            ]
+        )
+    if re.search(r"\b(started|began|begins|launched|released|issued|today|now)\b", clean, flags=re.I):
+        queries.append(f"{clean} today {current_year} news")
+    if re.search(r"\b(form|fill ?up|application|apply|online|portal)\b", clean, flags=re.I):
+        queries.append(f"{clean} application process form fill up {current_year}")
     return [query for query in _dedupe(queries) if query][:MAX_SEARCH_QUERY_VARIANTS]
 
 

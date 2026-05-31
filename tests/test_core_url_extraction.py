@@ -111,13 +111,13 @@ class UrlExtractionTests(unittest.TestCase):
         self.assertFalse(core.is_valid_url("https://not-a-url"))
 
     def test_private_url_is_rejected(self):
-        self.assertFalse(core.is_valid_url("http://127.0.0.1:5000/health"))
+        self.assertFalse(core.is_valid_url("http://127.0.0.1:5001/health"))
 
     @patch("api.core.requests.get")
     def test_fetch_html_rejects_redirect_to_private_url(self, requests_get):
         class FakeRedirect:
             status_code = 302
-            headers = {"Location": "http://127.0.0.1:5000/health"}
+            headers = {"Location": "http://127.0.0.1:5001/health"}
 
         requests_get.return_value = FakeRedirect()
 

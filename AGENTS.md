@@ -16,7 +16,7 @@
 - Create or activate a local virtual environment before installing dependencies.
 - Install dependencies with `pip install -r requirements.txt`.
 - Start the backend with `python app.py`.
-- The app serves the static frontend from Flask at `http://localhost:5000/` unless `PORT` is overridden.
+- The app serves the static frontend from Flask at `http://localhost:5001/` unless `PORT` is overridden.
 
 ## Validation
 - For backend-only changes, at minimum run targeted sanity checks or the smallest relevant command.

@@ -1,6 +1,6 @@
 class FactCheckerApp {
     constructor() {
-        this.apiUrl = '/api';   // Use API routes for Vercel serverless functions
+        this.apiUrl = window.location.protocol === 'file:' ? 'http://localhost:5001/api' : '/api';   // Use API routes for Vercel serverless functions
         this.initializeElements();
         this.bindEvents();
         this.initializeTheme();

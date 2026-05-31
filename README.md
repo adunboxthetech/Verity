@@ -85,7 +85,9 @@ Verity is a tool I built to verify online claims, articles, social posts, and im
    python app.py
    ```
 2. **Access the interface**:
-   The app serves `index.html` at `http://localhost:5000`. Just open this URL in your browser.
+   The app serves `index.html` at `http://localhost:5001`. Just open this URL in your browser.
+
+   *Note: You can also double-click `index.html` to open it directly from disk (`file://` protocol) in your browser while the backend is running; the app will dynamically route its API calls to `http://localhost:5001`.*
 
 ## API Endpoints
 

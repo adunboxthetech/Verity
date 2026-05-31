@@ -54,3 +54,6 @@ node_modules/
 .antigravitycli/
 .chrome_profile*/
 
+# Other tools
+.junie/
+

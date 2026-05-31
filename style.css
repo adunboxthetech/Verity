@@ -652,6 +652,7 @@ h5,
 /* Results */
 .results-section {
     animation: fade-in 0.5s ease;
+    scroll-margin-top: 12px;
 }
 
 @keyframes fade-in {
@@ -666,11 +667,23 @@ h5,
 }
 
 .results-header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    margin-bottom: 24px;
+    margin: -4px 0 20px;
+    padding: 10px 0 14px;
+    background: linear-gradient(
+        180deg,
+        var(--bg) 0%,
+        color-mix(in srgb, var(--bg) 86%, transparent) 72%,
+        transparent 100%
+    );
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
 }
 
 .results-header h2 {
@@ -683,6 +696,8 @@ h5,
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
 }
 
 .report-action-btn {
@@ -700,6 +715,61 @@ h5,
     transition: background 0.2s ease, transform 0.2s ease;
 }
 
+.export-actions {
+    display: inline-flex;
+    align-items: center;
+    height: 36px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: var(--glass-bg);
+    overflow: hidden;
+}
+
+.export-label {
+    padding: 0 10px 0 12px;
+    color: var(--text-main);
+    font-size: 0.88rem;
+    font-weight: 600;
+}
+
+.poster-style-menu {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 100%;
+    color: var(--text-muted);
+    border-left: 1px solid var(--glass-border);
+    cursor: pointer;
+}
+
+.poster-style-select {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    border: 0;
+    outline: 0;
+    cursor: pointer;
+}
+
+.export-actions .report-action-btn {
+    width: 38px;
+    min-width: 38px;
+    justify-content: center;
+    border: 0;
+    border-left: 1px solid var(--glass-border);
+    border-radius: 0;
+    padding: 0;
+    background: transparent;
+}
+
+.export-actions .report-action-btn:hover {
+    transform: none;
+}
+
 .report-action-btn:hover {
     background: var(--bg-secondary);
     transform: translateY(-1px);
@@ -709,6 +779,18 @@ h5,
     cursor: not-allowed;
     opacity: 0.45;
     transform: none;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 .empty-result {
@@ -1035,6 +1117,63 @@ h5,
     background: linear-gradient(135deg, var(--primary-hover), #9333ea);
 }
 
+.bottom-area.checking-mode .prompt-container {
+    justify-content: center;
+}
+
+.bottom-area.checking-mode .upload-section,
+.bottom-area.checking-mode .textarea-wrapper,
+.bottom-area.checking-mode .icon-action-btn {
+    display: none !important;
+}
+
+.bottom-area.checking-mode .action-buttons {
+    justify-content: center;
+    padding-bottom: 0;
+    animation: stop-button-to-center 0.28s ease-out;
+}
+
+.bottom-area.checking-mode .submit-btn {
+    width: 36px;
+    height: 36px;
+    background: rgba(248, 250, 252, 0.14);
+    color: var(--text-main);
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.26);
+    animation: stop-button-settle 0.28s ease-out;
+}
+
+.bottom-area.checking-mode .submit-btn:hover {
+    transform: scale(1.04);
+    background: rgba(251, 113, 133, 0.18);
+    color: #fb7185;
+    border-color: rgba(251, 113, 133, 0.45);
+}
+
+@keyframes stop-button-to-center {
+    from {
+        transform: translateX(64px);
+    }
+    to {
+        transform: translateX(0);
+    }
+}
+
+@keyframes stop-button-settle {
+    0% {
+        transform: scale(0.88);
+        opacity: 0.65;
+    }
+    70% {
+        transform: scale(1.08);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
 .bottom-area.results-mode .clear-label {
     display: inline !important;
 }
@@ -1044,11 +1183,19 @@ h5,
     .results-header {
         align-items: flex-start;
         flex-direction: column;
+        margin-top: -2px;
     }
     .report-actions {
         width: 100%;
     }
     .report-action-btn {
+        flex: 1;
+        justify-content: center;
+    }
+    .export-actions {
+        flex: 1 1 100%;
+    }
+    .export-actions .report-action-btn {
         flex: 1;
         justify-content: center;
     }

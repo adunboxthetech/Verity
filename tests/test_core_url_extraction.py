@@ -438,10 +438,10 @@ class UrlExtractionTests(unittest.TestCase):
         self.assertEqual(results[0]["claim"], "[Image] Visual claim analysis")
         self.assertEqual(results[0]["result"]["verdict"], "ANALYSIS COMPLETE")
 
-    @patch.object(core.FactChecker, "_post_gemini")
-    def test_fact_check_text_claims_accepts_single_object_response(self, post_gemini):
+    @patch.object(core.FactChecker, "_post_api")
+    def test_fact_check_text_claims_accepts_single_object_response(self, post_api):
         checker = core.FactChecker(api_key="test-key")
-        post_gemini.return_value = core.GeminiResponse(
+        post_api.return_value = core.GeminiResponse(
             status_code=200,
             body=json.dumps({
                 "choices": [{
@@ -463,10 +463,10 @@ class UrlExtractionTests(unittest.TestCase):
         self.assertEqual(results[0]["claim"], "OpenAI released ChatGPT.")
         self.assertEqual(results[0]["result"]["confidence"], 98)
 
-    @patch.object(core.FactChecker, "_post_gemini")
-    def test_fact_check_text_claims_falls_back_to_raw_analysis(self, post_gemini):
+    @patch.object(core.FactChecker, "_post_api")
+    def test_fact_check_text_claims_falls_back_to_raw_analysis(self, post_api):
         checker = core.FactChecker(api_key="test-key")
-        post_gemini.return_value = core.GeminiResponse(
+        post_api.return_value = core.GeminiResponse(
             status_code=200,
             body=json.dumps({
                 "choices": [{

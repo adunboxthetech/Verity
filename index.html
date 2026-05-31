@@ -97,10 +97,25 @@
                 <i class="fas fa-copy"></i>
                 <span>Copy</span>
               </button>
-              <button id="downloadReportBtn" class="report-action-btn" type="button" title="Download report">
-                <i class="fas fa-download"></i>
-                <span>Report</span>
-              </button>
+              <div class="export-actions" title="Choose a card style, then export">
+                <span class="export-label">Export</span>
+                <label class="poster-style-menu" title="Export card style">
+                  <select id="posterStyleSelect" class="poster-style-select" aria-label="Export card style">
+                    <option value="grid" selected>Grid</option>
+                    <option value="clean">Clean</option>
+                    <option value="spotlight">Spotlight</option>
+                  </select>
+                  <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                </label>
+                <button id="downloadCardBtn" class="report-action-btn export-icon-btn" type="button" title="Download card" aria-label="Download card">
+                  <i class="fas fa-download"></i>
+                  <span class="sr-only">Download</span>
+                </button>
+                <button id="downloadReportBtn" class="report-action-btn export-icon-btn" type="button" title="Share card" aria-label="Share card">
+                  <i class="fas fa-share-nodes"></i>
+                  <span class="sr-only">Share</span>
+                </button>
+              </div>
             </div>
           </div>
           <div id="resultsContainer"></div>
@@ -145,6 +160,6 @@
     </footer>
   </div>
 
-  <script src="script.js?v=7"></script>
+  <script src="script.js?v=16"></script>
 </body>
 </html>

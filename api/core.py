@@ -1429,12 +1429,20 @@ def _search_web_sources(
     query: str, max_results: int = MAX_WEB_EVIDENCE_SOURCES
 ) -> List[Dict[str, str]]:
     combined: List[Dict[str, str]] = []
-    for search_fn in (
+    search_fns = (
         _search_duckduckgo_sources,
         _search_bing_sources,
         _search_yahoo_sources,
-    ):
-        combined.extend(search_fn(query, max_results))
+    )
+    with ThreadPoolExecutor(max_workers=len(search_fns)) as executor:
+        futures = [
+            executor.submit(search_fn, query, max_results) for search_fn in search_fns
+        ]
+        for future in as_completed(futures):
+            try:
+                combined.extend(future.result() or [])
+            except Exception:
+                pass
     return _rank_search_sources(combined, max_results, query)
 
 
@@ -1492,8 +1500,13 @@ def _gather_web_evidence_for_claims(
 
     evidence: Dict[str, List[Dict[str, str]]] = {}
     searches: List[Tuple[str, str]] = []
+    seen_searches = set()
     for claim in clean_claims:
         for query in _build_search_queries_for_claim(claim):
+            search_key = (claim, query)
+            if search_key in seen_searches:
+                continue
+            seen_searches.add(search_key)
             searches.append((claim, query))
 
     if searches:

@@ -1,5 +1,6 @@
 import os
 import time
+from collections import defaultdict, deque
 
 from dotenv import load_dotenv
 from flask import Flask, abort, jsonify, request, send_from_directory
@@ -14,6 +15,7 @@ except Exception:
 from api.core import (
     GEMINI_API_KEY,
     GROQ_API_KEY,
+    MAX_TEXT_INPUT_CHARS,
     _get_env_var_insensitive,
     fact_check_extension_post_input,
     fact_check_image_input,
@@ -22,7 +24,17 @@ from api.core import (
 )
 
 app = Flask(__name__)
-CORS(app)
+cors_origins = [
+    origin.strip()
+    for origin in os.environ.get("CORS_ORIGINS", "*").split(",")
+    if origin.strip()
+]
+CORS(app, resources={r"/*": {"origins": cors_origins or "*"}})
+
+MAX_JSON_BODY_BYTES = 12 * 1024 * 1024
+RATE_LIMIT_WINDOW_SECONDS = 60
+RATE_LIMIT_MAX_POSTS = 40
+_rate_limit_hits = defaultdict(deque)
 
 ALLOWED_EXTENSIONS = {
     ".html",
@@ -39,6 +51,32 @@ ALLOWED_EXTENSIONS = {
     ".woff2",
     ".ttf",
 }
+
+
+def _client_key():
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",", 1)[0].strip()
+    return request.remote_addr or "unknown"
+
+
+@app.before_request
+def guard_api_requests():
+    if request.method != "POST":
+        return None
+
+    if request.content_length and request.content_length > MAX_JSON_BODY_BYTES:
+        return jsonify({"error": "Request body is too large."}), 413
+
+    now = time.time()
+    key = _client_key()
+    hits = _rate_limit_hits[key]
+    while hits and now - hits[0] > RATE_LIMIT_WINDOW_SECONDS:
+        hits.popleft()
+    if len(hits) >= RATE_LIMIT_MAX_POSTS:
+        return jsonify({"error": "Too many requests. Please wait a moment."}), 429
+    hits.append(now)
+    return None
 
 
 @app.route("/")
@@ -85,6 +123,12 @@ def fact_check():
 
     if not text and not url:
         return jsonify({"error": "No text or URL provided"}), 400
+    if text and len(str(text)) > MAX_TEXT_INPUT_CHARS:
+        return jsonify(
+            {
+                "error": f"Text is too long. Please keep it under {MAX_TEXT_INPUT_CHARS:,} characters."
+            }
+        ), 400
 
     if url:
         response_data, status_code = fact_check_url_input(url)

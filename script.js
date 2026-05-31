@@ -4,6 +4,20 @@ class FactCheckerApp {
         this.initializeElements();
         this.bindEvents();
         this.initializeTheme();
+        this.updateResultsHeader('Analysis Complete', false);
+        this.populateFromUrlParams();
+    }
+
+    populateFromUrlParams() {
+        try {
+            const params = new URLSearchParams(window.location.search);
+            const text = params.get('text');
+            if (!text || !this.textInput) return;
+            this.textInput.value = text.slice(0, 20000);
+            this.textInput.dispatchEvent(new Event('input'));
+            this.textInput.focus();
+            window.history.replaceState({}, document.title, window.location.pathname);
+        } catch (_) {}
     }
 
     initializeElements() {
@@ -12,16 +26,20 @@ class FactCheckerApp {
         this.clearBtn = document.getElementById('clearBtn');
         this.loadingSection = document.getElementById('loadingSection');
         this.resultsSection = document.getElementById('resultsSection');
+        this.resultsTitle = document.getElementById('resultsTitle');
         this.resultsContainer = document.getElementById('resultsContainer');
         this.themeToggle = document.getElementById('themeToggle');
         this.imageDrop = document.getElementById('imageDrop');
         this.imageInput = document.getElementById('imageInput');
         this.imagePreview = document.getElementById('imagePreview');
+        this.copyReportBtn = document.getElementById('copyReportBtn');
+        this.downloadReportBtn = document.getElementById('downloadReportBtn');
         this.ambientGradient = document.getElementById('ambientGradient');
         this.welcomeSection = document.getElementById('welcomeSection');
         this.bottomArea = document.querySelector('.bottom-area');
         this.brandLogo = document.getElementById('brandLogo');
         this.analyzeImageBtn = null;
+        this.lastResult = null;
     }
 
     bindEvents() {
@@ -29,6 +47,12 @@ class FactCheckerApp {
         this.clearBtn.addEventListener('click', () => this.handleClear());
         if (this.themeToggle) {
             this.themeToggle.addEventListener('click', () => this.toggleTheme());
+        }
+        if (this.copyReportBtn) {
+            this.copyReportBtn.addEventListener('click', () => this.copyReport());
+        }
+        if (this.downloadReportBtn) {
+            this.downloadReportBtn.addEventListener('click', () => this.downloadReport());
         }
         if (this.imageDrop) {
             this.imageDrop.addEventListener('click', () => this.imageInput.click());
@@ -302,6 +326,7 @@ class FactCheckerApp {
             this.textInput.style.display = '';
         }
         this.updateFactCheckButtonState();
+        this.updateResultsHeader();
 
         if (typeof mysticalEngine !== 'undefined') {
             mysticalEngine.resetInput();
@@ -340,6 +365,10 @@ class FactCheckerApp {
     displayResults(data) {
 
         this.resultsContainer.innerHTML = '';
+        this.lastResult = data;
+        const resultItems = Array.isArray(data.fact_check_results) ? data.fact_check_results : [];
+        const hasBlockingError = Boolean((data.analysis_error || data.image_analysis_error) && resultItems.length === 0);
+        this.updateResultsHeader(hasBlockingError ? 'Check blocked' : 'Analysis Complete', resultItems.length > 0);
 
         if (data.source_url && this.isSafeHttpUrl(data.source_url)) {
             const safeSourceUrl = this.escapeAttribute(data.source_url);
@@ -424,13 +453,21 @@ class FactCheckerApp {
             this.resultsContainer.appendChild(msgDiv);
         }
 
-        if (!data.fact_check_results || data.fact_check_results.length === 0) {
+        const breakdownElement = hasBlockingError ? null : this.createClaimBreakdownElement(data.claim_breakdown);
+        if (breakdownElement) {
+            this.resultsContainer.appendChild(breakdownElement);
+        }
+
+        if (resultItems.length === 0) {
             const empty = document.createElement('p');
-            empty.textContent = data.analysis_error ? 'Analysis could not complete.' : 'No factual claims found to verify.';
-            this.resultsContainer.appendChild(empty);
+            empty.className = 'empty-result';
+            empty.textContent = hasBlockingError ? 'Try again after the provider limit resets, or configure another AI provider key.' : 'No factual claims found to verify.';
+            if (!hasBlockingError) {
+                this.resultsContainer.appendChild(empty);
+            }
         } else {
             let allClaims = [];
-            data.fact_check_results.forEach((result) => {
+            resultItems.forEach((result) => {
                 const subClaims = this.extractSubClaims(result);
                 if (subClaims && subClaims.length > 0) {
                     allClaims.push(...subClaims);
@@ -457,6 +494,17 @@ class FactCheckerApp {
         this.clearBtn.innerHTML = '<i class="fas fa-eraser"></i><span class="clear-label">New Check</span>';
 
         this.resultsSection.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    updateResultsHeader(title = 'Analysis Complete', canExport = false) {
+        if (this.resultsTitle) {
+            this.resultsTitle.textContent = title;
+        }
+        [this.copyReportBtn, this.downloadReportBtn].forEach((button) => {
+            if (!button) return;
+            button.disabled = !canExport;
+            button.setAttribute('aria-disabled', String(!canExport));
+        });
     }
 
     extractSubClaims(result) {
@@ -568,6 +616,7 @@ class FactCheckerApp {
 
         const verdict = result.result.verdict ? result.result.verdict.toLowerCase() : 'unknown';
         const verdictClass = this.getVerdictClass(verdict);
+        const statusLabel = result.result.status_label || this.getStatusLabel(result.result.verdict);
 
         div.className = `claim-result ${verdictClass}`;
 
@@ -575,7 +624,8 @@ class FactCheckerApp {
         let explanation = result.result.explanation || 'No explanation provided';
         let extractedSources = result.result.sources || [];
 
-        const sourcesHtml = this.renderSources(extractedSources);
+        const evidenceHtml = this.renderEvidence(result.result.evidence || []);
+        const sourcesHtml = evidenceHtml || this.renderSources(extractedSources);
 
         if (typeof explanation === 'string') {
             let trimmedExp = explanation.trim();
@@ -640,6 +690,11 @@ class FactCheckerApp {
                 ${this.escapeHtml(result.result.verdict || 'UNKNOWN')}
             </div>
 
+            <div class="status-pill ${verdictClass}">
+                <i class="fas fa-circle-check"></i>
+                ${this.escapeHtml(statusLabel)}
+            </div>
+
             <div class="confidence">
                 <i class="fas fa-chart-bar"></i>
                 <strong>Confidence:</strong> ${this.escapeHtml(String(result.result.confidence || 'N/A'))}%
@@ -655,9 +710,39 @@ class FactCheckerApp {
         return div;
     }
 
+    createClaimBreakdownElement(breakdown) {
+        if (!breakdown || !Array.isArray(breakdown.checked_claims)) return null;
+        const wrapper = document.createElement('section');
+        wrapper.className = 'claim-breakdown';
+        const checked = breakdown.checked_claims;
+        const ignored = Array.isArray(breakdown.ignored_claims) ? breakdown.ignored_claims : [];
+        const checkedItems = checked.length
+            ? checked.map((item, index) => `
+                <li>
+                    <span class="breakdown-index">${index + 1}</span>
+                    <span>${this.escapeHtml(item.claim || 'Claim')}</span>
+                    <strong>${this.escapeHtml(item.status_label || item.verdict || 'Checked')}</strong>
+                </li>
+            `).join('')
+            : '<li><span>No concrete factual claims were checked.</span></li>';
+        const ignoredItems = ignored.length
+            ? `<div class="ignored-note"><i class="fas fa-circle-info"></i> ${ignored.map(item => this.escapeHtml(item.reason || '')).filter(Boolean).join(' ')}</div>`
+            : '';
+
+        wrapper.innerHTML = `
+            <div class="section-title">
+                <i class="fas fa-list-check"></i>
+                <span>Claim breakdown</span>
+            </div>
+            <ul>${checkedItems}</ul>
+            ${ignoredItems}
+        `;
+        return wrapper;
+    }
+
     getVerdictClass(verdict) {
         verdict = verdict.toLowerCase();
-        if (verdict.includes('partial')) {
+        if (verdict.includes('partial') || verdict.includes('insufficient') || verdict.includes('unverifiable') || verdict.includes('unknown')) {
             return 'partial';
         } else if (verdict.includes('true') && !verdict.includes('false')) {
             return 'true';
@@ -665,6 +750,16 @@ class FactCheckerApp {
             return 'false';
         }
         return 'partial';
+    }
+
+    getStatusLabel(verdict) {
+        const value = String(verdict || '').toLowerCase();
+        if (value.includes('unverifiable')) return 'Unverifiable';
+        if (value.includes('insufficient') || value.includes('unknown')) return 'Needs more evidence';
+        if (value.includes('partial') || (value.includes('true') && value.includes('false'))) return 'Partly true';
+        if (value.includes('false')) return 'Misleading';
+        if (value.includes('true')) return 'Verified';
+        return 'Needs more evidence';
     }
 
     escapeHtml(str) {
@@ -695,6 +790,116 @@ class FactCheckerApp {
                 <strong>Sources:</strong> ${items}
             </div>
         `;
+    }
+
+    renderEvidence(evidence) {
+        if (!Array.isArray(evidence) || evidence.length === 0) return '';
+        const cards = evidence
+            .filter(item => item && item.url && this.isSafeHttpUrl(item.url))
+            .slice(0, 6)
+            .map((item, index) => {
+                const safeUrl = this.escapeAttribute(item.url);
+                const host = this.escapeHtml(item.host || this.humanizeSource(item.url, index + 1));
+                const title = this.escapeHtml(item.title || host);
+                const tier = this.escapeHtml(item.tier || 'source');
+                const notes = this.escapeHtml(item.notes || 'Evidence source considered for this claim.');
+                const snippet = item.snippet ? `<p>${this.escapeHtml(item.snippet)}</p>` : '';
+                return `
+                    <article class="evidence-card">
+                        <div class="evidence-topline">
+                            <a href="${safeUrl}" target="_blank" rel="noopener">${title}</a>
+                            <span>${tier}</span>
+                        </div>
+                        <div class="evidence-host">${host}</div>
+                        ${snippet}
+                        <div class="evidence-note">${notes}</div>
+                    </article>
+                `;
+            })
+            .join('');
+        if (!cards) return '';
+        return `
+            <div class="evidence-panel">
+                <div class="section-title">
+                    <i class="fas fa-scale-balanced"></i>
+                    <span>Evidence used</span>
+                </div>
+                ${cards}
+            </div>
+        `;
+    }
+
+    buildReportText() {
+        const data = this.lastResult;
+        if (!data) return '';
+        const lines = [];
+        lines.push('Verity fact-check report');
+        lines.push(`Generated: ${new Date((data.timestamp || Date.now() / 1000) * 1000).toLocaleString()}`);
+        if (data.source_url) lines.push(`Source: ${data.source_url}`);
+        if (data.source_title) lines.push(`Title: ${data.source_title}`);
+        lines.push('');
+
+        const results = Array.isArray(data.fact_check_results) ? data.fact_check_results : [];
+        if (!results.length) {
+            lines.push(data.analysis_error || data.image_analysis_error || 'No factual claims found.');
+            return lines.join('\n');
+        }
+
+        results.forEach((item, index) => {
+            const result = item.result || {};
+            lines.push(`Claim ${index + 1}: ${item.claim || 'Unknown claim'}`);
+            lines.push(`Status: ${result.status_label || this.getStatusLabel(result.verdict)} (${result.verdict || 'UNKNOWN'}, ${result.confidence || 'N/A'}%)`);
+            lines.push(`Analysis: ${result.explanation || 'No explanation provided.'}`);
+            const evidence = Array.isArray(result.evidence) ? result.evidence : [];
+            const sources = evidence.length ? evidence.map(item => item.url) : (Array.isArray(result.sources) ? result.sources : []);
+            if (sources.length) {
+                lines.push('Sources:');
+                sources.slice(0, 8).forEach(url => lines.push(`- ${url}`));
+            }
+            lines.push('');
+        });
+        return lines.join('\n').trim();
+    }
+
+    async copyReport() {
+        const report = this.buildReportText();
+        if (!report) return;
+        try {
+            await navigator.clipboard.writeText(report);
+            this.flashReportButton(this.copyReportBtn, 'Copied');
+        } catch (_) {
+            const area = document.createElement('textarea');
+            area.value = report;
+            document.body.appendChild(area);
+            area.select();
+            document.execCommand('copy');
+            area.remove();
+            this.flashReportButton(this.copyReportBtn, 'Copied');
+        }
+    }
+
+    downloadReport() {
+        const report = this.buildReportText();
+        if (!report) return;
+        const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `verity-report-${Date.now()}.txt`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        this.flashReportButton(this.downloadReportBtn, 'Saved');
+    }
+
+    flashReportButton(button, text) {
+        if (!button) return;
+        const label = button.querySelector('span');
+        if (!label) return;
+        const previous = label.textContent;
+        label.textContent = text;
+        setTimeout(() => { label.textContent = previous; }, 1400);
     }
 
     escapeAttribute(str) {
@@ -742,6 +947,7 @@ class FactCheckerApp {
 
     showError(message) {
         const friendlyMessage = this.getFriendlyErrorMessage(message);
+        this.updateResultsHeader('Check blocked', false);
         this.resultsContainer.innerHTML = `
             <div class="claim-result false">
                 <div class="explanation">
@@ -1219,5 +1425,5 @@ const mysticalEngine = new MysticalEngine();
 
 // Initialize the app when page loads
 document.addEventListener('DOMContentLoaded', () => {
-    new FactCheckerApp();
+    window.verityApp = new FactCheckerApp();
 });

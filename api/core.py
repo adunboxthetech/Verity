@@ -28,7 +28,7 @@ from readability import Document
 
 def _get_env_var_insensitive(key: str) -> Optional[str]:
     for k, v in os.environ.items():
-        if k.lower() == key.lower():
+        if k.lower() == key.lower() and isinstance(v, str) and v.strip():
             return v
     return None
 
@@ -89,6 +89,7 @@ BOILERPLATE_MARKERS = [
 ]
 
 MAX_TEXT_CHARS = 12000
+MAX_TEXT_INPUT_CHARS = 20000
 MAX_EXTENSION_TEXT_CHARS = 9000
 MAX_CLAIMS = 6
 MAX_IMAGE_CLAIMS = 4
@@ -260,6 +261,147 @@ def _source_host(url: str) -> str:
         return ""
 
 
+def _status_from_verdict(verdict: Any) -> Tuple[str, str]:
+    value = str(verdict or "").strip().lower()
+    if "error" in value:
+        return "error", "Could not verify"
+    if "unverifiable" in value:
+        return "unverifiable", "Unverifiable"
+    if "insufficient" in value or "unknown" in value:
+        return "needs_more_evidence", "Needs more evidence"
+    if "partial" in value or "misleading" in value or (
+        "true" in value and "false" in value
+    ):
+        return "partly_true", "Partly true"
+    if "false" in value:
+        return "misleading", "Misleading"
+    if "true" in value:
+        return "verified", "Verified"
+    return "needs_more_evidence", "Needs more evidence"
+
+
+def _public_evidence_item(source: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    url = _normalize_source_url(str(source.get("url") or ""))
+    if not url:
+        return None
+    host = _source_host(url)
+    title = _clean_text(str(source.get("title") or host or "Source"))
+    snippet = _truncate(_clean_text(str(source.get("snippet") or "")), 420)
+    tier = _clean_text(str(source.get("source_tier") or "unknown"))
+    notes = _clean_text(str(source.get("source_notes") or ""))
+    try:
+        authority_score = int(source.get("source_authority_score", 0))
+    except Exception:
+        authority_score = 0
+    return {
+        "url": url,
+        "host": host,
+        "title": title,
+        "snippet": snippet,
+        "tier": tier,
+        "authority_score": authority_score,
+        "notes": notes,
+    }
+
+
+def _evidence_items_from_sources(
+    urls: List[str], claim_domain: str = "general"
+) -> List[Dict[str, Any]]:
+    items = []
+    for url in _clean_sources(urls, []):
+        score, tier, notes = _source_authority_score(url, claim_domain)
+        item = _public_evidence_item(
+            {
+                "url": url,
+                "title": _source_host(url) or "Source",
+                "snippet": "",
+                "source_tier": tier,
+                "source_authority_score": str(score),
+                "source_notes": notes,
+            }
+        )
+        if item:
+            items.append(item)
+    return items[:MAX_WEB_EVIDENCE_SOURCES]
+
+
+def _enrich_fact_check_results(
+    results: List[Dict[str, Any]],
+    evidence_by_claim: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+) -> List[Dict[str, Any]]:
+    evidence_by_claim = evidence_by_claim or {}
+    enriched: List[Dict[str, Any]] = []
+    for item in results:
+        if not isinstance(item, dict):
+            enriched.append(item)
+            continue
+        result = item.get("result")
+        if not isinstance(result, dict):
+            enriched.append(item)
+            continue
+
+        claim = _clean_text(str(item.get("claim") or ""))
+        status, status_label = _status_from_verdict(result.get("verdict"))
+        result["status"] = status
+        result["status_label"] = status_label
+        result["confidence"] = _coerce_confidence(result.get("confidence", 75))
+        result["sources"] = _clean_sources(result.get("sources", []))
+
+        claim_domain = _classify_claim_domain(claim)
+        evidence = evidence_by_claim.get(_clean_search_query(claim), [])
+        public_evidence = [
+            public_item
+            for source in evidence
+            for public_item in [_public_evidence_item(source)]
+            if public_item
+        ]
+        if not public_evidence:
+            public_evidence = _evidence_items_from_sources(
+                result.get("sources", []), claim_domain
+            )
+        result["claim_domain"] = claim_domain
+        result["evidence"] = public_evidence[:MAX_WEB_EVIDENCE_SOURCES]
+        item["check_status"] = "checked"
+        enriched.append(item)
+    return enriched
+
+
+def _build_claim_breakdown(
+    input_type: str, results: List[Dict[str, Any]], analysis_error: str = ""
+) -> Dict[str, Any]:
+    checked = []
+    for item in results:
+        result = item.get("result") if isinstance(item, dict) else None
+        if not isinstance(result, dict):
+            continue
+        checked.append(
+            {
+                "claim": item.get("claim", ""),
+                "status": result.get("status", "needs_more_evidence"),
+                "status_label": result.get("status_label", "Needs more evidence"),
+                "verdict": result.get("verdict", "UNKNOWN"),
+                "confidence": _coerce_confidence(result.get("confidence", 0), 0),
+                "source_count": len(_clean_sources(result.get("sources", []))),
+            }
+        )
+
+    ignored = []
+    if not checked and not analysis_error:
+        ignored.append(
+            {
+                "reason": "No concrete factual claims were detected in the submitted content.",
+                "count": 1,
+            }
+        )
+
+    return {
+        "input_type": input_type,
+        "total_checked": len(checked),
+        "checked_claims": checked,
+        "ignored_claims": ignored,
+    }
+
+
 def _is_social_source_url(url: str) -> bool:
     host = _source_host(url)
     return host in {
@@ -317,18 +459,18 @@ def _classify_claim_domain(claim: str) -> str:
     ):
         return "government_policy"
     if re.search(
+        r"\b(study|research|paper|scientists|climate|temperature|earthquake|"
+        r"space|nasa|isro|moon|mars|satellite)\b",
+        text,
+    ):
+        return "science"
+    if re.search(
         r"\b(announced|launch|launched|partnering|partnership|company|startup|"
         r"model|ai|openai|google|deepmind|microsoft|apple|nvidia|product|"
         r"watermarked|synthid)\b",
         text,
     ):
         return "company_technology"
-    if re.search(
-        r"\b(study|research|paper|scientists|climate|temperature|earthquake|"
-        r"space|nasa|isro|moon|mars|satellite)\b",
-        text,
-    ):
-        return "science"
     if re.search(
         r"\b(match|score|goal|runs|wicket|ipl|cricket|football|nba|nfl|"
         r"tournament|world cup|olympics)\b",
@@ -2354,41 +2496,25 @@ class FactChecker:
         - Dedicated LPU hardware (fewer 503 "high demand" errors)
         - OpenAI-compatible format (simpler, no translation needed)
 
-        When use_web_search is set, we prefer Gemini (Google Search Grounding).
-        If Gemini fails, we fall back to Groq without search.
+        Gemini is the fallback provider and handles Google Search grounding when
+        Groq is unavailable or fails.
         """
         use_vision = self._has_vision_content(payload)
-        use_web_search = payload.get("use_web_search", False)
+        groq_response: Optional[GeminiResponse] = None
 
-        # If web search is needed, try Gemini first (Google Search Grounding)
-        if use_web_search and self.gemini_api_key:
-            response = self._post_gemini(payload)
-            if response is not None and response.status_code == 200:
-                return response
-            # Gemini failed — fall back to Groq without search
-            if self.groq_api_key:
-                fallback_payload = {
-                    k: v for k, v in payload.items() if k != "use_web_search"
-                }
-                response = self._post_groq(fallback_payload, use_vision=use_vision)
-                if response is not None and response.status_code == 200:
-                    return response
-            return response
-
-        # Try Groq first (if key is configured)
         if self.groq_api_key:
             # Strip use_web_search from Groq payloads (not supported)
             groq_payload = {k: v for k, v in payload.items() if k != "use_web_search"}
-            response = self._post_groq(groq_payload, use_vision=use_vision)
-            if response is not None and response.status_code == 200:
-                return response
+            groq_response = self._post_groq(groq_payload, use_vision=use_vision)
+            if groq_response is not None and groq_response.status_code == 200:
+                return groq_response
 
-        # Fall back to Gemini
         if self.gemini_api_key:
-            return self._post_gemini(payload)
+            gemini_response = self._post_gemini(payload)
+            if gemini_response is not None:
+                return gemini_response
 
-        # If we got a non-200 from Groq and no Gemini key, return whatever Groq gave us
-        return response if self.groq_api_key else None
+        return groq_response if self.groq_api_key else None
 
     def _rate_limit_pause(self):
         """Brief pause between API calls to respect free-tier RPM limits."""
@@ -2695,7 +2821,7 @@ class FactChecker:
                     claim,
                 )
         if not any(evidence_by_claim.values()):
-            return results
+            return _enrich_fact_check_results(results)
 
         def evidence_sources_for(claim: str) -> List[str]:
             evidence = evidence_by_claim.get(_clean_search_query(claim), [])
@@ -2809,7 +2935,7 @@ class FactChecker:
             ):
                 item["result"]["sources"] = evidence_sources
             refined.append(item)
-        return refined
+        return _enrich_fact_check_results(refined, evidence_by_claim)
 
     def extract_image_claims(
         self,
@@ -3024,23 +3150,33 @@ def _get_checker() -> Tuple[Optional[FactChecker], Optional[str]]:
 
 
 def fact_check_text_input(text: str) -> Tuple[Dict[str, Any], int]:
+    text = _clean_text(text)
+    if not text:
+        return {"error": "No text provided"}, 400
+    if len(text) > MAX_TEXT_INPUT_CHARS:
+        return {
+            "error": f"Text is too long. Please keep it under {MAX_TEXT_INPUT_CHARS:,} characters."
+        }, 400
+
     checker, checker_error = _get_checker()
     if checker is None:
         return {
             "error": checker_error
             or "No API key configured (set GROQ_API_KEY and/or GEMINI_API_KEY)"
         }, 500
-    text = _clean_text(text)
-    if not text:
-        return {"error": "No text provided"}, 400
 
     results = checker.fact_check_text_claims(text)
     if results and hasattr(checker, "refine_results_with_web_evidence"):
         results = checker.refine_results_with_web_evidence(results)
+    else:
+        results = _enrich_fact_check_results(results)
 
     response = {
         "original_text": text,
         "claims_found": len(results),
+        "claim_breakdown": _build_claim_breakdown(
+            "text", results, checker.last_text_error
+        ),
         "fact_check_results": results,
         "timestamp": time.time(),
     }
@@ -3073,11 +3209,16 @@ def fact_check_image_input(
             source_urls=[image_url] if image_url else None,
             source_context="Image submitted by the user for fact-checking.",
         )
+    else:
+        results = _enrich_fact_check_results(results)
     image_analysis_error = checker.last_image_error
 
     response = {
         "original_image": original_image,
         "claims_found": len(results),
+        "claim_breakdown": _build_claim_breakdown(
+            "image", results, image_analysis_error
+        ),
         "fact_check_results": results,
         "timestamp": time.time(),
         "source_url": image_url or None,
@@ -3202,6 +3343,8 @@ def fact_check_url_input(url: str) -> Tuple[Dict[str, Any], int]:
             source_context=text,
             source_title=title,
         )
+    else:
+        results = _enrich_fact_check_results(results)
 
     for item in results:
         result = item.get("result") if isinstance(item, dict) else None
@@ -3209,10 +3352,14 @@ def fact_check_url_input(url: str) -> Tuple[Dict[str, Any], int]:
             result["sources"] = _dedupe_sources(
                 _clean_sources(result.get("sources", [])) + source_fallback
             )
+    results = _enrich_fact_check_results(results)
 
     response = {
         "original_text": text,
         "claims_found": len(results),
+        "claim_breakdown": _build_claim_breakdown(
+            "url", results, text_analysis_error
+        ),
         "fact_check_results": results,
         "timestamp": time.time(),
         "source_url": url,
@@ -3296,6 +3443,8 @@ def fact_check_extension_post_input(
     payload: Dict[str, Any]
 ) -> Tuple[Dict[str, Any], int]:
     text = _clean_text(str(payload.get("text") or ""))
+    if len(text) > MAX_EXTENSION_TEXT_CHARS:
+        text = _truncate(text, MAX_EXTENSION_TEXT_CHARS)
     image_urls = _clean_extension_image_urls(payload.get("image_urls"))
     image_url = _normalize_source_url(str(payload.get("image_url") or ""))
     if image_url and not is_valid_url(image_url):
@@ -3364,6 +3513,8 @@ def fact_check_extension_post_input(
             source_context=text,
             source_title=_clean_text(str(payload.get("title") or "")),
         )
+    else:
+        results = _enrich_fact_check_results(results)
 
     for item in results:
         result = item.get("result") if isinstance(item, dict) else None
@@ -3372,10 +3523,14 @@ def fact_check_extension_post_input(
                 _clean_sources(result.get("sources", [])) + source_fallback,
                 MAX_WEB_EVIDENCE_SOURCES,
             )
+    results = _enrich_fact_check_results(results)
 
     response = {
         "original_text": text,
         "claims_found": len(results),
+        "claim_breakdown": _build_claim_breakdown(
+            "extension", results, text_analysis_error or image_analysis_error
+        ),
         "fact_check_results": results,
         "timestamp": time.time(),
         "source_url": source_fallback[0] if source_fallback else None,

@@ -462,7 +462,8 @@ a:hover {
   transition: all 0.25s ease;
 }
 
-.actions button:first-child {
+.actions button:first-child,
+.actions button:nth-child(2) {
   color: var(--text-main);
   border: 1px solid var(--glass-border);
   background: var(--glass-bg);
@@ -470,7 +471,8 @@ a:hover {
   -webkit-backdrop-filter: blur(12px);
 }
 
-.actions button:first-child:hover {
+.actions button:first-child:hover,
+.actions button:nth-child(2):hover {
   border-color: rgba(255, 255, 255, 0.15);
   background: rgba(255, 255, 255, 0.06);
   transform: translateY(-1px);
@@ -500,6 +502,10 @@ a:hover {
   border-color: rgba(0, 0, 0, 0.12);
 }
 :root[data-theme="light"] .actions button:first-child:hover {
+  border-color: rgba(0, 0, 0, 0.15);
+  background: rgba(0, 0, 0, 0.03);
+}
+:root[data-theme="light"] .actions button:nth-child(2):hover {
   border-color: rgba(0, 0, 0, 0.15);
   background: rgba(0, 0, 0, 0.03);
 }

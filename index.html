@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500;1,600;1,700&family=Inter:wght@300;400;500&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link href="style.css?v=3" rel="stylesheet" />
+  <link href="style.css?v=5" rel="stylesheet" />
   <script>
     // Apply saved or system theme before paint to avoid flash
     (function () {
@@ -91,7 +91,17 @@
 
         <div id="resultsSection" class="results-section hidden">
           <div class="results-header">
-            <h2>Analysis Complete</h2>
+            <h2 id="resultsTitle">Analysis Complete</h2>
+            <div class="report-actions">
+              <button id="copyReportBtn" class="report-action-btn" type="button" title="Copy report">
+                <i class="fas fa-copy"></i>
+                <span>Copy</span>
+              </button>
+              <button id="downloadReportBtn" class="report-action-btn" type="button" title="Download report">
+                <i class="fas fa-download"></i>
+                <span>Report</span>
+              </button>
+            </div>
           </div>
           <div id="resultsContainer"></div>
         </div>
@@ -135,6 +145,6 @@
     </footer>
   </div>
 
-  <script src="script.js?v=4"></script>
+  <script src="script.js?v=7"></script>
 </body>
 </html>

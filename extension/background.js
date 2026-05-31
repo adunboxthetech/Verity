@@ -1,5 +1,6 @@
 // Map to store the last detected theme for each tab
 const tabThemes = {};
+const DEFAULT_API_BASE = "https://veritycheck.vercel.app";
 
 // Helper function to update the icon for a tab and globally
 function updateIcon(tabId, isDark) {
@@ -50,6 +51,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return false;
 });
 
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: "verity-check-selection",
+    title: "Fact-check selected text with Verity",
+    contexts: ["selection"]
+  });
+});
+
+chrome.contextMenus.onClicked.addListener((info) => {
+  if (info.menuItemId !== "verity-check-selection") return;
+  const selectedText = (info.selectionText || "").trim();
+  if (!selectedText) return;
+
+  chrome.storage.sync.get({ apiBase: DEFAULT_API_BASE }, ({ apiBase }) => {
+    const base = normalizeApiBase(apiBase) || DEFAULT_API_BASE;
+    const target = `${base}/?text=${encodeURIComponent(selectedText.slice(0, 4000))}`;
+    chrome.tabs.create({ url: target });
+  });
+});
+
+function normalizeApiBase(value) {
+  try {
+    const url = new URL((value || "").trim());
+    if (!["http:", "https:"].includes(url.protocol)) return "";
+    url.pathname = url.pathname.replace(/\/+$/, "");
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/$/, "");
+  } catch (_) {
+    return "";
+  }
+}
+
 // Re-apply the icon when tab updates (to override Chrome's automatic resets during navigation)
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   // If the status is loading or complete, and we have a saved theme, re-apply it
@@ -67,4 +101,3 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   delete tabThemes[tabId];
 });
-

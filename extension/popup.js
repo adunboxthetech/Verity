@@ -14,6 +14,7 @@ const elements = {
   loadingText: document.getElementById("loadingText"),
   resultCard: document.getElementById("resultCard"),
   retryBtn: document.getElementById("retryBtn"),
+  copyReportBtn: document.getElementById("copyReportBtn"),
   openAppBtn: document.getElementById("openAppBtn"),
   actionButtons: document.getElementById("actionButtons"),
   themeToggle: document.getElementById("themeToggle"),
@@ -23,6 +24,7 @@ const elements = {
 
 let activeTab = null;
 let apiBase = DEFAULT_API_BASE;
+let lastResult = null;
 
 document.addEventListener("DOMContentLoaded", init);
 
@@ -45,6 +47,7 @@ async function init() {
   });
   elements.saveSettings.addEventListener("click", saveSettings);
   elements.retryBtn.addEventListener("click", runCheck);
+  elements.copyReportBtn.addEventListener("click", copyReport);
   elements.openAppBtn.addEventListener("click", openBackendApp);
 
   runCheck();
@@ -262,6 +265,7 @@ function renderPostPreview(post) {
 }
 
 function renderResults(data) {
+  lastResult = data;
   elements.resultCard.innerHTML = "";
   elements.resultCard.classList.remove("hidden");
   elements.actionButtons.classList.remove("hidden");
@@ -293,7 +297,7 @@ function renderClaim(item) {
 
   const verdict = document.createElement("div");
   verdict.className = `verdict ${verdictClass(result.verdict || "")}`;
-  verdict.textContent = `${result.verdict || "UNKNOWN"} - ${result.confidence || "N/A"}%`;
+  verdict.textContent = `${result.status_label || statusLabel(result.verdict)} - ${result.confidence || "N/A"}%`;
 
   const explanation = document.createElement("div");
   explanation.className = "explanation";
@@ -301,8 +305,26 @@ function renderClaim(item) {
 
   wrapper.append(claim, verdict, explanation);
 
-  const sources = Array.isArray(result.sources) ? result.sources.filter(Boolean) : [];
-  if (sources.length) {
+  const evidence = Array.isArray(result.evidence) ? result.evidence.filter(item => item && item.url) : [];
+  const sources = evidence.length ? evidence.map(item => item.url) : (Array.isArray(result.sources) ? result.sources.filter(Boolean) : []);
+  if (evidence.length) {
+    const evidenceBox = document.createElement("div");
+    evidenceBox.className = "sources evidence-mini";
+    evidenceBox.appendChild(document.createTextNode("Evidence: "));
+    evidence.slice(0, 3).forEach((item, index) => {
+      const link = document.createElement("a");
+      link.href = item.url;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.title = item.notes || item.title || item.url;
+      link.textContent = `${item.host || humanizeUrl(item.url, index + 1)} · ${item.tier || "source"}`;
+      evidenceBox.appendChild(link);
+      if (index < Math.min(evidence.length, 3) - 1) {
+        evidenceBox.appendChild(document.createTextNode(", "));
+      }
+    });
+    wrapper.appendChild(evidenceBox);
+  } else if (sources.length) {
     const sourceBox = document.createElement("div");
     sourceBox.className = "sources";
     sourceBox.textContent = "Sources: ";
@@ -321,6 +343,47 @@ function renderClaim(item) {
   }
 
   return wrapper;
+}
+
+function statusLabel(verdict) {
+  const value = String(verdict || "").toLowerCase();
+  if (value.includes("unverifiable")) return "Unverifiable";
+  if (value.includes("insufficient") || value.includes("unknown")) return "Needs more evidence";
+  if (value.includes("partial") || (value.includes("true") && value.includes("false"))) return "Partly true";
+  if (value.includes("false")) return "Misleading";
+  if (value.includes("true")) return "Verified";
+  return "Needs more evidence";
+}
+
+async function copyReport() {
+  const report = buildReportText();
+  if (!report) return;
+  await navigator.clipboard.writeText(report);
+  const previous = elements.copyReportBtn.textContent;
+  elements.copyReportBtn.textContent = "Copied";
+  setTimeout(() => {
+    elements.copyReportBtn.textContent = previous;
+  }, 1200);
+}
+
+function buildReportText() {
+  if (!lastResult) return "";
+  const lines = ["Verity fact-check report"];
+  if (lastResult.source_url) lines.push(`Source: ${lastResult.source_url}`);
+  lines.push("");
+  const results = Array.isArray(lastResult.fact_check_results) ? lastResult.fact_check_results : [];
+  if (!results.length) return lines.concat("No clear factual claim was found.").join("\n");
+  results.forEach((item, index) => {
+    const result = item.result || {};
+    lines.push(`Claim ${index + 1}: ${item.claim || "Unknown claim"}`);
+    lines.push(`Status: ${result.status_label || statusLabel(result.verdict)} (${result.verdict || "UNKNOWN"}, ${result.confidence || "N/A"}%)`);
+    lines.push(`Analysis: ${result.explanation || "No explanation provided."}`);
+    const evidence = Array.isArray(result.evidence) ? result.evidence : [];
+    const sources = evidence.length ? evidence.map(item => item.url) : (Array.isArray(result.sources) ? result.sources : []);
+    sources.slice(0, 5).forEach(url => lines.push(`- ${url}`));
+    lines.push("");
+  });
+  return lines.join("\n").trim();
 }
 
 function verdictClass(verdict) {

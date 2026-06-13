@@ -3236,6 +3236,30 @@ class FactChecker:
         elif response is not None:
             self.last_text_error = _extract_error_message(response)
 
+        def _find_best_update(claim_text: str) -> Optional[Dict[str, Any]]:
+            """Find the best matching update for a claim, with fuzzy fallback."""
+            key = _claim_key(claim_text)
+            # Exact match
+            if key in updates:
+                return updates[key]
+            # Fuzzy match: try substring containment and word overlap
+            best_match = None
+            best_score = 0
+            claim_words = set(key.split())
+            for update_key, update_val in updates.items():
+                # Substring containment (either direction)
+                if key in update_key or update_key in key:
+                    return update_val
+                # Word overlap score
+                update_words = set(update_key.split())
+                overlap = len(claim_words & update_words)
+                total = max(len(claim_words), len(update_words), 1)
+                score = overlap / total
+                if score > best_score and score >= 0.6:
+                    best_score = score
+                    best_match = update_val
+            return best_match
+
         refined: List[Dict[str, Any]] = []
         for item in results:
             if (
@@ -3245,7 +3269,7 @@ class FactChecker:
             ):
                 refined.append(item)
                 continue
-            update = updates.get(_claim_key(item["claim"]))
+            update = _find_best_update(item["claim"])
             evidence_sources = evidence_sources_for(item["claim"])
             if update:
                 model_sources = _clean_sources(update.get("sources", []))

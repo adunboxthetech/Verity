@@ -3324,30 +3324,49 @@ class FactChecker:
                 evidence_items = result.get("evidence", [])
                 # Find the best evidence snippets
                 best_snippets = []
+                has_reputable = False
                 for ev in evidence_items:
                     tier = str(ev.get("tier", "")).lower()
                     snippet = str(ev.get("snippet", ""))
                     host = ev.get("host", "")
-                    if tier in ("primary", "reputable", "high") and len(snippet) > 50:
-                        best_snippets.append((host, snippet[:200]))
-                    elif len(snippet) > 100 and not best_snippets:
-                        best_snippets.append((host, snippet[:200]))
+                    is_rep = tier in ("primary", "reputable", "high")
+                    if is_rep and len(snippet) > 50:
+                        best_snippets.append((host, snippet[:200], True))
+                        has_reputable = True
+                    elif len(snippet) > 100:
+                        best_snippets.append((host, snippet[:200], False))
 
                 if best_snippets:
+                    # Prioritize reputable sources
+                    best_snippets.sort(key=lambda x: 0 if x[2] else 1)
+                    selected_snippets = best_snippets[:2]
+
                     # Build explanation from evidence
                     source_desc = "; ".join(
-                        f"{host} reports: {snip}..." for host, snip in best_snippets[:2]
+                        f"{host} reports: {snip}..." for host, snip, _ in selected_snippets
                     )
-                    result["verdict"] = "PARTIALLY TRUE"
-                    result["explanation"] = (
-                        f"Web evidence from {len(evidence_items)} sources addresses this claim. "
-                        f"{source_desc} "
-                        "The evidence suggests the claim may be accurate but could not be fully confirmed by the AI model."
-                    )
-                    result["confidence"] = max(
-                        result.get("confidence", 0),
-                        55 if quality == "moderate" else 70,
-                    )
+                    if has_reputable:
+                        result["verdict"] = "TRUE"
+                        result["explanation"] = (
+                            f"Web evidence from {len(evidence_items)} sources addresses this claim. "
+                            f"{source_desc} "
+                            "The claim is verified as true based on reports from reputable sources."
+                        )
+                        result["confidence"] = max(
+                            result.get("confidence", 0),
+                            80 if quality == "moderate" else 90,
+                        )
+                    else:
+                        result["verdict"] = "PARTIALLY TRUE"
+                        result["explanation"] = (
+                            f"Web evidence from {len(evidence_items)} sources addresses this claim. "
+                            f"{source_desc} "
+                            "The evidence suggests the claim may be accurate but could not be fully confirmed by the AI model."
+                        )
+                        result["confidence"] = max(
+                            result.get("confidence", 0),
+                            55 if quality == "moderate" else 70,
+                        )
                     # Re-compute status from updated verdict
                     status, status_label = _status_from_verdict(result["verdict"])
                     result["status"] = status

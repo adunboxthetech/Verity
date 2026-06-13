@@ -2801,19 +2801,28 @@ class FactChecker:
         return False
 
     def _post_api(self, payload: Dict[str, Any]) -> Optional[GeminiResponse]:
-        """Unified API call: tries Groq first (primary), falls back to Gemini.
+        """Unified API call with smart provider routing.
 
-        Groq is preferred because:
+        When use_web_search is True, Gemini is preferred because it supports
+        Google Search grounding — Groq/Llama models cannot search the web and
+        fall back to their knowledge cutoff, producing stale verdicts.
+
+        For non-search calls, Groq is preferred because:
         - Higher free-tier RPM (30-60 vs 15)
         - Dedicated LPU hardware (fewer 503 "high demand" errors)
         - OpenAI-compatible format (simpler, no translation needed)
-
-        Gemini is the fallback provider and handles Google Search grounding when
-        Groq is unavailable or fails.
         """
         use_vision = self._has_vision_content(payload)
-        groq_response: Optional[GeminiResponse] = None
+        use_search = bool(payload.get("use_web_search"))
 
+        # When web search is requested, prefer Gemini (Google Search grounding)
+        if use_search and self.gemini_api_key:
+            gemini_response = self._post_gemini(payload)
+            if gemini_response is not None and gemini_response.status_code == 200:
+                return gemini_response
+            # Gemini failed — fall through to Groq as last resort
+
+        groq_response: Optional[GeminiResponse] = None
         if self.groq_api_key:
             # Strip use_web_search from Groq payloads (not supported)
             groq_payload = {k: v for k, v in payload.items() if k != "use_web_search"}
@@ -2821,7 +2830,8 @@ class FactChecker:
             if groq_response is not None and groq_response.status_code == 200:
                 return groq_response
 
-        if self.gemini_api_key:
+        # For non-search calls, try Gemini as fallback
+        if not use_search and self.gemini_api_key:
             gemini_response = self._post_gemini(payload)
             if gemini_response is not None:
                 return gemini_response
@@ -2885,10 +2895,12 @@ class FactChecker:
         current_date = datetime.date.today().isoformat()
         prompt = (
             f"Today's date is {current_date}. "
-            "Fact-check this claim with high accuracy. Provide:\n"
+            "Fact-check this claim with high accuracy using web search results. Provide:\n"
             "1. Verdict (TRUE/FALSE/PARTIALLY TRUE/INSUFFICIENT EVIDENCE/UNVERIFIABLE)\n"
             "2. Confidence level (0-100%)\n"
-            "3. Brief explanation (2-3 sentences). Do NOT refuse to fact-check by saying you cannot browse the internet or access real-time data; use your best existing knowledge.\n"
+            "3. Brief explanation (2-3 sentences) based ONLY on what you found from searching. "
+            "NEVER say 'as of my knowledge cutoff' or 'I do not have information' — you MUST search for current information and base your answer on what you find. "
+            "If search results are insufficient, say 'No reliable sources found to confirm or deny this claim.'\n"
             "4. Key sources used as a list of canonical URLs. Each source MUST be a full http(s) URL. "
             "Do not include reference numbers or titles, only URLs.\n\n"
             "For latest/current/today/recent claims, verify freshness carefully and mark INSUFFICIENT EVIDENCE if the available sources are stale or indirect.\n\n"
@@ -2987,8 +2999,10 @@ class FactChecker:
             f"Extract and fact-check up to {max_claims} concrete factual claims from the provided text. "
             "The text might be an article, a short statement, a question, or a rumor. "
             "If it's a short statement or a direct claim, fact-check it directly. "
-            "Use your internal knowledge to verify the claims to the best of your ability. "
-            "Do NOT refuse to answer by saying you cannot browse the internet or access current data; provide the best fact-check based on your existing knowledge. "
+            "You MUST search the web for current information to verify every claim. "
+            "NEVER say 'as of my knowledge cutoff', 'I do not have information beyond', or 'my training data only goes up to'. "
+            "You have access to web search — USE IT. Base your explanations ONLY on what you find from searching. "
+            "If search results are insufficient for a claim, say 'No reliable sources found to confirm or deny this claim' and mark it INSUFFICIENT EVIDENCE. "
             "For claims involving latest, today, now, current status, recent launches, active applications, prices, elections, legal status, or other time-sensitive facts, treat freshness as essential and prefer the newest directly relevant source. "
             "If sources are old, indirect, or do not establish the current state, mark INSUFFICIENT EVIDENCE or UNVERIFIABLE instead of guessing. "
             "CRITICAL: When extracting claims, preserve the EXACT original wording of ALL names, entities, and proper nouns from the text. "
@@ -2996,7 +3010,7 @@ class FactChecker:
             "'Elon Musk' must NOT become 'Elon'. A claim about one entity must not be confused with a different entity that shares a partial name. "
             "Return ONLY JSON with this exact shape: "
             '{"claims":[{"claim":"...","verdict":"TRUE|FALSE|PARTIALLY TRUE|INSUFFICIENT EVIDENCE|UNVERIFIABLE",'
-            '"confidence":85,"explanation":"2-3 sentences","sources":["https://..."]}]}. '
+            '"confidence":85,"explanation":"2-3 sentences based on search results","sources":["https://..."]}]}. '
             "Confidence must be an integer from 1 to 100. "
             "Even if the text is short or conversational, identify the core premise and fact-check it. "
             'Only return {"claims":[]} if absolutely no claim can be derived.\n\n'
@@ -3180,9 +3194,12 @@ class FactChecker:
             "If the evidence supports the claim, mark TRUE. If it contradicts the claim, mark FALSE or PARTIALLY TRUE. "
             "If the evidence is weak, missing, circular, or only repeats the same social post, mark INSUFFICIENT EVIDENCE. "
             "Use only URLs that appear in the evidence list as sources. "
+            "CRITICAL: Write a NEW explanation based ONLY on the evidence provided. "
+            "NEVER reference 'knowledge cutoff', 'training data', or say 'I do not have information'. "
+            "Your explanation must describe what the evidence shows, not what the model knows internally. "
             "Return ONLY JSON with this exact shape: "
             '{"claims":[{"claim":"...","verdict":"TRUE|FALSE|PARTIALLY TRUE|INSUFFICIENT EVIDENCE|UNVERIFIABLE",'
-            '"confidence":85,"explanation":"2-3 sentences describing the evidence used","sources":["https://..."]}]}. '
+            '"confidence":85,"explanation":"2-3 sentences describing the evidence found from web search","sources":["https://..."]}]}. '
             f"Evidence package: {json.dumps(evidence_payload, ensure_ascii=False)}"
         )
         payload = {
@@ -3347,11 +3364,13 @@ class FactChecker:
             "Focus exclusively on extracting and fact-checking assertions, statements, text-based claims, or statistics. "
             "If the image contains any text, premise, or implied claim, fact-check it. "
             "For claims involving latest, today, current status, active applications, prices, elections, legal status, or other time-sensitive facts, freshness is essential; old or indirect evidence should not be treated as confirmation. "
-            "Use your extensive internal knowledge base to thoroughly verify these claims. "
-                            "Do NOT refuse to answer by saying you cannot browse the internet or access current data; provide the best assessment possible based on your existing knowledge. "
+            "You MUST search the web for current information to verify every claim. "
+                            "NEVER say 'as of my knowledge cutoff', 'I do not have information', or 'my training data'. "
+                            "Base your explanations ONLY on what you find from searching. "
+                            "If search results are insufficient, say 'No reliable sources found to confirm or deny this claim' and mark it INSUFFICIENT EVIDENCE. "
                             "Return ONLY JSON with this exact shape: "
                             '{"claims":[{"claim":"...","verdict":"TRUE|FALSE|PARTIALLY TRUE|INSUFFICIENT EVIDENCE|UNVERIFIABLE",'
-                            '"confidence":85,"explanation":"2-3 sentences","sources":["https://..."]}]}. '
+                            '"confidence":85,"explanation":"2-3 sentences based on search results","sources":["https://..."]}]}. '
                             "Sources must be full http(s) URLs when available. "
                             'Only return {"claims":[]} if absolutely no text or factual assertion is present.'
                         ),

@@ -1749,12 +1749,12 @@ def _fetch_evidence_page_summary(source: Dict[str, str]) -> Dict[str, str]:
         published_at = _extract_publication_date(soup, jsonld_items)
         body = _extract_body_text(resp.text)
         summary = _clean_text(
-            " ".join(part for part in [description, body[:900]] if part)
+            " ".join(part for part in [description, body[:1800]] if part)
         )
         if title:
             source["title"] = title
         if summary:
-            source["snippet"] = _truncate(summary, 900)
+            source["snippet"] = _truncate(summary, 1500)
         if published_at:
             source["published_at"] = published_at
         source["fetched_at"] = datetime.datetime.now(datetime.timezone.utc).replace(
@@ -3182,30 +3182,38 @@ class FactChecker:
         current_date = datetime.date.today().isoformat()
         prompt = (
             f"Today's date is {current_date}. You are a careful fact-checking editor. "
-            "Re-check each claim using the provided public web evidence snippets. "
-            "Use the claim_domain, source_policy, source_tier, source_authority_score, and source_notes fields to decide which evidence deserves more weight. "
-            "Prefer primary documents, official statements, domain-specific authorities, and reputable reporting. "
-            "For current announcements, a verified original post or official company/government post can be strong primary evidence; do not dismiss it merely because it is social media. "
-            "Check dates carefully and prefer the newest directly relevant source when older sources report earlier milestones or figures. "
-            "CRITICAL: Verify that each claim accurately represents what the original text actually stated. "
-            "Watch for partial name matches, stale numbers, and same-topic-but-wrong-date evidence. "
-            "Do not let low-tier or unknown-tier sources override stronger primary/high/reputable sources unless they provide direct, checkable evidence. "
-            "If the claim text appears to have been incorrectly extracted (names truncated, entities confused), mark it FALSE or UNVERIFIABLE, not TRUE. "
-            "If the evidence supports the claim, mark TRUE. If it contradicts the claim, mark FALSE or PARTIALLY TRUE. "
-            "If the evidence is weak, missing, circular, or only repeats the same social post, mark INSUFFICIENT EVIDENCE. "
-            "Use only URLs that appear in the evidence list as sources. "
-            "CRITICAL: Write a NEW explanation based ONLY on the evidence provided. "
-            "NEVER reference 'knowledge cutoff', 'training data', or say 'I do not have information'. "
-            "Your explanation must describe what the evidence shows, not what the model knows internally. "
+            "Your job is to re-evaluate each claim using the web evidence snippets provided below. "
+            "READ EACH EVIDENCE SNIPPET CAREFULLY. The evidence has already been gathered from the web for you. "
+            "\n\nRULES FOR VERDICTS:\n"
+            "- If ANY reputable or primary source snippet contains information that directly confirms the claim, mark it TRUE. "
+            "- If the evidence contradicts the claim, mark FALSE or PARTIALLY TRUE. "
+            "- Only mark INSUFFICIENT EVIDENCE if the snippets genuinely do not address the claim at all, or only repeat an unverified social post with zero corroboration. "
+            "- Do NOT mark a claim as INSUFFICIENT EVIDENCE or UNVERIFIABLE simply because the event is recent. If reputable news outlets report it, that IS evidence. "
+            "\n\nSOURCE EVALUATION:\n"
+            "Use source_tier and source_authority_score to weigh evidence. "
+            "Primary (government, official org) and reputable (major news outlets) sources are strong evidence. "
+            "If a reputable source like sportstar.thehindu.com, espn.com, olympics.com, reuters.com, bbc.com, or newsonair.gov.in reports a fact, treat that as reliable confirmation. "
+            "For current announcements, a verified original post or official company/government post can be strong primary evidence. "
+            "Check dates carefully and prefer the newest directly relevant source. "
+            "\n\nCRITICAL CHECKS:\n"
+            "- Verify that each claim accurately represents what was originally stated. "
+            "- Watch for partial name matches, stale numbers, and wrong-date evidence. "
+            "- If the claim text was incorrectly extracted (names truncated, entities confused), mark it FALSE or UNVERIFIABLE. "
+            "- Use only URLs that appear in the evidence list as sources. "
+            "\n\nOUTPUT RULES:\n"
+            "Write a NEW explanation citing specific evidence from the snippets. "
+            "NEVER say 'knowledge cutoff', 'training data', 'I cannot verify', or 'information might not be available'. "
+            "State what the evidence shows. For example: 'According to sportstar.thehindu.com, India won 19 medals and finished second.' "
             "Return ONLY JSON with this exact shape: "
             '{"claims":[{"claim":"...","verdict":"TRUE|FALSE|PARTIALLY TRUE|INSUFFICIENT EVIDENCE|UNVERIFIABLE",'
-            '"confidence":85,"explanation":"2-3 sentences describing the evidence found from web search","sources":["https://..."]}]}. '
-            f"Evidence package: {json.dumps(evidence_payload, ensure_ascii=False)}"
+            '"confidence":85,"explanation":"2-3 sentences citing specific evidence from the snippets","sources":["https://..."]}]}. '
+            f"\n\nEvidence package: {json.dumps(evidence_payload, ensure_ascii=False)}"
         )
         payload = {
             "model": GEMINI_PRIMARY_MODEL,
             "messages": [{"role": "user", "content": prompt}],
             "response_format": {"type": "json_object"},
+            "use_web_search": True,
         }
         response = self._post_api(payload)
 

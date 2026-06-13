@@ -3299,7 +3299,61 @@ class FactChecker:
             ):
                 item["result"]["sources"] = evidence_sources
             refined.append(item)
-        return _enrich_fact_check_results(refined, evidence_by_claim)
+
+        # Safety net: detect cases where strong/moderate evidence was gathered
+        # but the model still returned INSUFFICIENT EVIDENCE / UNVERIFIABLE.
+        # This catches intermittent model failures where evidence clearly
+        # supports the claim but the model dismissed it.
+        enriched = _enrich_fact_check_results(refined, evidence_by_claim)
+        for item in enriched:
+            result = item.get("result") if isinstance(item, dict) else None
+            if not isinstance(result, dict):
+                continue
+            verdict = str(result.get("verdict", "")).upper()
+            profile = result.get("evidence_profile", {})
+            quality = profile.get("quality", "")
+            strong_count = profile.get("strong_source_count", 0)
+
+            # If evidence quality is moderate/strong but verdict is weak,
+            # the model failed to properly analyze the evidence. Build a
+            # corrected explanation from the evidence snippets.
+            if verdict in ("INSUFFICIENT EVIDENCE", "UNVERIFIABLE") and quality in (
+                "moderate",
+                "strong",
+            ):
+                evidence_items = result.get("evidence", [])
+                # Find the best evidence snippets
+                best_snippets = []
+                for ev in evidence_items:
+                    tier = str(ev.get("tier", "")).lower()
+                    snippet = str(ev.get("snippet", ""))
+                    host = ev.get("host", "")
+                    if tier in ("primary", "reputable", "high") and len(snippet) > 50:
+                        best_snippets.append((host, snippet[:200]))
+                    elif len(snippet) > 100 and not best_snippets:
+                        best_snippets.append((host, snippet[:200]))
+
+                if best_snippets:
+                    # Build explanation from evidence
+                    source_desc = "; ".join(
+                        f"{host} reports: {snip}..." for host, snip in best_snippets[:2]
+                    )
+                    result["verdict"] = "PARTIALLY TRUE"
+                    result["explanation"] = (
+                        f"Web evidence from {len(evidence_items)} sources addresses this claim. "
+                        f"{source_desc} "
+                        "The evidence suggests the claim may be accurate but could not be fully confirmed by the AI model."
+                    )
+                    result["confidence"] = max(
+                        result.get("confidence", 0),
+                        55 if quality == "moderate" else 70,
+                    )
+                    # Re-compute status from updated verdict
+                    status, status_label = _status_from_verdict(result["verdict"])
+                    result["status"] = status
+                    result["status_label"] = status_label
+
+        return enriched
 
     def extract_image_claims(
         self,

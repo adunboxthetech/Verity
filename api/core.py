@@ -4,6 +4,7 @@ import ipaddress
 import json
 import os
 import re
+import threading
 import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -111,6 +112,14 @@ GEMINI_INTER_REQUEST_DELAY = 0.5  # seconds between API calls
 GROQ_INTER_REQUEST_DELAY = 0.3  # Groq has higher RPM limits than Gemini
 GROQ_MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024  # Groq limits base64 images to 4MB
 UPSTREAM_TIMEOUT_SECONDS = 25
+SEARCH_CACHE_TTL_SECONDS = 10 * 60
+EVIDENCE_PAGE_CACHE_TTL_SECONDS = 30 * 60
+SEARCH_CACHE_MAX_ITEMS = 256
+EVIDENCE_PAGE_CACHE_MAX_ITEMS = 256
+
+_CACHE_LOCK = threading.RLock()
+_SEARCH_CACHE: Dict[Tuple[str, int], Tuple[float, List[Dict[str, str]]]] = {}
+_EVIDENCE_PAGE_CACHE: Dict[str, Tuple[float, Dict[str, str]]] = {}
 
 
 @dataclass
@@ -121,6 +130,39 @@ class GeminiResponse:
 
     def json(self) -> Dict[str, Any]:
         return json.loads(self.body or "{}")
+
+
+def _prune_cache(
+    cache: Dict[Any, Tuple[float, Any]], ttl_seconds: int, max_items: int, now: float
+) -> None:
+    expired_keys = [
+        key for key, (timestamp, _) in cache.items() if now - timestamp > ttl_seconds
+    ]
+    for key in expired_keys:
+        cache.pop(key, None)
+
+    overflow = len(cache) - max_items
+    if overflow <= 0:
+        return
+    oldest_keys = sorted(cache, key=lambda key: cache[key][0])[:overflow]
+    for key in oldest_keys:
+        cache.pop(key, None)
+
+
+def _prune_caches(now: Optional[float] = None) -> None:
+    now = time.time() if now is None else now
+    _prune_cache(
+        _SEARCH_CACHE,
+        SEARCH_CACHE_TTL_SECONDS,
+        SEARCH_CACHE_MAX_ITEMS,
+        now,
+    )
+    _prune_cache(
+        _EVIDENCE_PAGE_CACHE,
+        EVIDENCE_PAGE_CACHE_TTL_SECONDS,
+        EVIDENCE_PAGE_CACHE_MAX_ITEMS,
+        now,
+    )
 
 
 def _try_parse_json_block(s: Optional[str]) -> Optional[Any]:
@@ -289,11 +331,18 @@ def _public_evidence_item(source: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     snippet = _truncate(_clean_text(str(source.get("snippet") or "")), 420)
     tier = _clean_text(str(source.get("source_tier") or "unknown"))
     notes = _clean_text(str(source.get("source_notes") or ""))
+    published_at = _clean_text(str(source.get("published_at") or "")) or _extract_date_hint(
+        " ".join(
+            str(source.get(key) or "")
+            for key in ("url", "title", "snippet")
+        )
+    )
+    fetched_at = _clean_text(str(source.get("fetched_at") or ""))
     try:
         authority_score = int(source.get("source_authority_score", 0))
     except Exception:
         authority_score = 0
-    return {
+    item = {
         "url": url,
         "host": host,
         "title": title,
@@ -302,6 +351,64 @@ def _public_evidence_item(source: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "authority_score": authority_score,
         "notes": notes,
     }
+    if published_at:
+        item["published_at"] = published_at
+    if fetched_at:
+        item["fetched_at"] = fetched_at
+    return item
+
+
+def _evidence_profile(
+    evidence: List[Dict[str, Any]], claim_domain: str
+) -> Dict[str, Any]:
+    sources = [item for item in evidence if isinstance(item, dict) and item.get("url")]
+    hosts = _dedupe([_source_host(str(item.get("url") or "")) for item in sources])
+    strong_tiers = {"primary", "high", "reputable", "primary_if_verified"}
+
+    def authority_score(item: Dict[str, Any]) -> int:
+        try:
+            return int(item.get("authority_score") or 0)
+        except Exception:
+            return 0
+
+    strong_sources = [
+        item
+        for item in sources
+        if str(item.get("tier") or "").lower() in strong_tiers
+        or authority_score(item) >= 60
+    ]
+    published_dates = sorted(
+        {
+            str(item.get("published_at"))
+            for item in sources
+            if str(item.get("published_at") or "").strip()
+        },
+        reverse=True,
+    )
+    return {
+        "checked_at": datetime.datetime.now(datetime.timezone.utc)
+        .replace(microsecond=0)
+        .isoformat(),
+        "claim_domain": claim_domain,
+        "source_policy": _source_policy_for_domain(claim_domain),
+        "source_count": len(sources),
+        "strong_source_count": len(strong_sources),
+        "distinct_hosts": len(hosts),
+        "latest_published_at": published_dates[0] if published_dates else "",
+        "quality": _evidence_quality_label(len(sources), len(strong_sources), len(hosts)),
+    }
+
+
+def _evidence_quality_label(
+    source_count: int, strong_source_count: int, distinct_hosts: int
+) -> str:
+    if strong_source_count >= 2 and distinct_hosts >= 2:
+        return "strong"
+    if strong_source_count >= 1 or (source_count >= 3 and distinct_hosts >= 2):
+        return "moderate"
+    if source_count:
+        return "limited"
+    return "missing"
 
 
 def _evidence_items_from_sources(
@@ -361,6 +468,9 @@ def _enrich_fact_check_results(
             )
         result["claim_domain"] = claim_domain
         result["evidence"] = public_evidence[:MAX_WEB_EVIDENCE_SOURCES]
+        result["evidence_profile"] = _evidence_profile(
+            result["evidence"], claim_domain
+        )
         item["check_status"] = "checked"
         enriched.append(item)
     return enriched
@@ -672,16 +782,31 @@ def _source_relevance_score(source: Dict[str, str], query: str) -> int:
         if term in snippet.lower():
             score += 4
 
+    for phrase in _important_claim_phrases(query):
+        if phrase in haystack:
+            score += 22
+        else:
+            score -= 22
+
     if re.search(r"\b(official|announced|statement|press release|blog)\b", haystack):
         score += 8
     if re.search(r"\b\d{4}\b", query):
         for year in re.findall(r"\b\d{4}\b", query):
             if year in haystack:
                 score += 8
+            else:
+                score -= 16
     if re.search(r"\b(latest|today|breaking|now|current|announced)\b", haystack):
         score += 5
 
     return score
+
+
+def _important_claim_phrases(query: str) -> List[str]:
+    clean = _clean_text(query).lower()
+    roman = r"(?:i|ii|iii|iv|v|vi|vii|viii|ix|x)"
+    phrases = re.findall(rf"\b[a-z][a-z0-9-]+\s+{roman}\b", clean)
+    return _dedupe(phrases)
 
 
 def _extract_grounding_sources(response_data: Dict[str, Any]) -> List[str]:
@@ -1064,6 +1189,115 @@ def _extract_jsonld_text(items: List[dict]) -> str:
     return _clean_text(" ".join(texts))
 
 
+def _normalize_date_value(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    value = value.strip()
+    if not value:
+        return ""
+    match = re.search(r"\b(20\d{2}|19\d{2})[-/](\d{1,2})[-/](\d{1,2})\b", value)
+    if match:
+        year, month, day = (int(part) for part in match.groups())
+        try:
+            return datetime.date(year, month, day).isoformat()
+        except ValueError:
+            return ""
+    try:
+        parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed.date().isoformat()
+    except Exception:
+        return ""
+
+
+def _extract_date_hint(text: str) -> str:
+    text = str(text or "")
+    normalized = _normalize_date_value(text)
+    if normalized:
+        return normalized
+
+    month_names = {
+        "jan": 1,
+        "january": 1,
+        "feb": 2,
+        "february": 2,
+        "mar": 3,
+        "march": 3,
+        "apr": 4,
+        "april": 4,
+        "may": 5,
+        "jun": 6,
+        "june": 6,
+        "jul": 7,
+        "july": 7,
+        "aug": 8,
+        "august": 8,
+        "sep": 9,
+        "sept": 9,
+        "september": 9,
+        "oct": 10,
+        "october": 10,
+        "nov": 11,
+        "november": 11,
+        "dec": 12,
+        "december": 12,
+    }
+    month_pattern = "|".join(sorted(month_names, key=len, reverse=True))
+    patterns = [
+        rf"\b({month_pattern})\.?\s+(\d{{1,2}}),?\s+((?:19|20)\d{{2}})\b",
+        rf"\b(\d{{1,2}})\s+({month_pattern})\.?,?\s+((?:19|20)\d{{2}})\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.I)
+        if not match:
+            continue
+        first, second, year = match.groups()
+        if first.isdigit():
+            day = int(first)
+            month = month_names[second.lower().rstrip(".")]
+        else:
+            month = month_names[first.lower().rstrip(".")]
+            day = int(second)
+        try:
+            return datetime.date(int(year), month, day).isoformat()
+        except ValueError:
+            continue
+    return ""
+
+
+def _extract_publication_date(soup: BeautifulSoup, jsonld_items: List[dict]) -> str:
+    selectors = [
+        ("meta", {"property": "article:published_time"}),
+        ("meta", {"property": "article:modified_time"}),
+        ("meta", {"name": "date"}),
+        ("meta", {"name": "pubdate"}),
+        ("meta", {"name": "publishdate"}),
+        ("meta", {"name": "timestamp"}),
+        ("meta", {"itemprop": "datePublished"}),
+        ("meta", {"itemprop": "dateModified"}),
+    ]
+    for tag_name, attrs in selectors:
+        tag = soup.find(tag_name, attrs=attrs)
+        value = tag.get("content") if tag else ""
+        normalized = _normalize_date_value(value)
+        if normalized:
+            return normalized
+
+    time_tag = soup.find("time")
+    if time_tag:
+        normalized = _normalize_date_value(
+            time_tag.get("datetime") or time_tag.get_text(" ", strip=True)
+        )
+        if normalized:
+            return normalized
+
+    for item in jsonld_items:
+        for key in ("datePublished", "dateModified", "uploadDate"):
+            normalized = _normalize_date_value(item.get(key))
+            if normalized:
+                return normalized
+    return ""
+
+
 def _extract_jsonld_images(items: List[dict]) -> List[str]:
     images: List[str] = []
     for item in items:
@@ -1248,9 +1482,22 @@ def _build_search_queries_for_claim(claim: str) -> List[str]:
         "science": "official research paper study",
         "sports": "official score result",
     }
+    primary_source_queries = {
+        "medical": f"{clean} site:who.int OR site:cdc.gov OR site:fda.gov",
+        "finance": f"{clean} site:sec.gov OR site:rbi.org.in OR site:sebi.gov.in",
+        "legal": f"{clean} site:supremecourt.gov OR site:sci.gov.in OR site:indiacode.nic.in",
+        "government_policy": f"{clean} site:pib.gov.in OR site:india.gov.in OR site:gov.in",
+        "company_technology": f"{clean} official announcement press release {current_year}",
+        "science": f"{clean} site:nasa.gov OR site:isro.gov.in OR site:pubmed.ncbi.nlm.nih.gov",
+        "sports": f"{clean} official result scoreboard {current_year}",
+    }
+    if claim_domain in primary_source_queries:
+        queries.append(primary_source_queries[claim_domain])
     queries.append(
         f"{clean} {current_year} latest {domain_modifiers.get(claim_domain, 'official')}"
     )
+    if re.search(r"\b(latest|today|now|current|breaking|announced|launched)\b", clean, flags=re.I):
+        queries.append(f"{clean} after:{current_year - 1}-01-01")
     subject = _extract_search_subject(clean)
     if subject and subject.lower() != clean.lower():
         if re.search(r"\b(form|fill ?up|application|apply|online|portal)\b", clean, flags=re.I):
@@ -1428,6 +1675,13 @@ def _search_yahoo_sources(query: str, max_results: int) -> List[Dict[str, str]]:
 def _search_web_sources(
     query: str, max_results: int = MAX_WEB_EVIDENCE_SOURCES
 ) -> List[Dict[str, str]]:
+    cache_key = (_clean_search_query(query), max_results)
+    now = time.time()
+    with _CACHE_LOCK:
+        cached = _SEARCH_CACHE.get(cache_key)
+        if cached and now - cached[0] <= SEARCH_CACHE_TTL_SECONDS:
+            return [dict(item) for item in cached[1]]
+
     combined: List[Dict[str, str]] = []
     search_fns = (
         _search_duckduckgo_sources,
@@ -1443,13 +1697,26 @@ def _search_web_sources(
                 combined.extend(future.result() or [])
             except Exception:
                 pass
-    return _rank_search_sources(combined, max_results, query)
+    ranked = _rank_search_sources(combined, max_results, query)
+    with _CACHE_LOCK:
+        _SEARCH_CACHE[cache_key] = (now, [dict(item) for item in ranked])
+        _prune_caches(now)
+    return ranked
 
 
 def _fetch_evidence_page_summary(source: Dict[str, str]) -> Dict[str, str]:
     url = source.get("url", "")
     if not url or _is_social_source_url(url):
         return source
+    normalized_url = _normalize_source_url(url)
+    now = time.time()
+    with _CACHE_LOCK:
+        cached = _EVIDENCE_PAGE_CACHE.get(normalized_url)
+        if cached and now - cached[0] <= EVIDENCE_PAGE_CACHE_TTL_SECONDS:
+            enriched = dict(source)
+            enriched.update(cached[1])
+            return enriched
+
     try:
         resp = _safe_request(
             "get",
@@ -1463,6 +1730,8 @@ def _fetch_evidence_page_summary(source: Dict[str, str]) -> Dict[str, str]:
             return source
         soup = BeautifulSoup(resp.text, "lxml")
         title, description = _extract_meta_text(soup)
+        jsonld_items = _extract_jsonld(soup)
+        published_at = _extract_publication_date(soup, jsonld_items)
         body = _extract_body_text(resp.text)
         summary = _clean_text(
             " ".join(part for part in [description, body[:900]] if part)
@@ -1471,6 +1740,21 @@ def _fetch_evidence_page_summary(source: Dict[str, str]) -> Dict[str, str]:
             source["title"] = title
         if summary:
             source["snippet"] = _truncate(summary, 900)
+        if published_at:
+            source["published_at"] = published_at
+        source["fetched_at"] = datetime.datetime.now(datetime.timezone.utc).replace(
+            microsecond=0
+        ).isoformat()
+        with _CACHE_LOCK:
+            _EVIDENCE_PAGE_CACHE[normalized_url] = (
+                now,
+                {
+                    key: source[key]
+                    for key in ("title", "snippet", "published_at", "fetched_at")
+                    if source.get(key)
+                },
+            )
+            _prune_caches(now)
     except Exception:
         pass
     return source
@@ -2592,6 +2876,7 @@ class FactChecker:
             "3. Brief explanation (2-3 sentences). Do NOT refuse to fact-check by saying you cannot browse the internet or access real-time data; use your best existing knowledge.\n"
             "4. Key sources used as a list of canonical URLs. Each source MUST be a full http(s) URL. "
             "Do not include reference numbers or titles, only URLs.\n\n"
+            "For latest/current/today/recent claims, verify freshness carefully and mark INSUFFICIENT EVIDENCE if the available sources are stale or indirect.\n\n"
             "Claim: {claim}\n\n"
             "Format your response as JSON with keys: verdict, confidence, explanation, sources"
         ).format(claim=claim)
@@ -2689,6 +2974,8 @@ class FactChecker:
             "If it's a short statement or a direct claim, fact-check it directly. "
             "Use your internal knowledge to verify the claims to the best of your ability. "
             "Do NOT refuse to answer by saying you cannot browse the internet or access current data; provide the best fact-check based on your existing knowledge. "
+            "For claims involving latest, today, now, current status, recent launches, active applications, prices, elections, legal status, or other time-sensitive facts, treat freshness as essential and prefer the newest directly relevant source. "
+            "If sources are old, indirect, or do not establish the current state, mark INSUFFICIENT EVIDENCE or UNVERIFIABLE instead of guessing. "
             "CRITICAL: When extracting claims, preserve the EXACT original wording of ALL names, entities, and proper nouns from the text. "
             "Never truncate, shorten, or split multi-word names. For example, 'Claude Monet' must remain 'Claude Monet' and NOT be shortened to 'Claude'. "
             "'Elon Musk' must NOT become 'Elon'. A claim about one entity must not be confused with a different entity that shares a partial name. "
@@ -3040,11 +3327,12 @@ class FactChecker:
                             f"Today's date is {current_date}. "
                             f"Analyze this image and fact-check up to {max_claims} substantive factual claims visible in it. "
                             "The image may be a Reddit/social-media image, meme, screenshot, chart, stock card, headline, or news card. "
-                            "Use OCR to extract visible text, labels, quotes, numbers, and charts. "
-                            "CRITICAL: DO NOT just describe objects in the image (e.g., 'The image displays a flag'). "
-                            "Focus exclusively on extracting and fact-checking assertions, statements, text-based claims, or statistics. "
-                            "If the image contains any text, premise, or implied claim, fact-check it. "
-                            "Use your extensive internal knowledge base to thoroughly verify these claims. "
+            "Use OCR to extract visible text, labels, quotes, numbers, and charts. "
+            "CRITICAL: DO NOT just describe objects in the image (e.g., 'The image displays a flag'). "
+            "Focus exclusively on extracting and fact-checking assertions, statements, text-based claims, or statistics. "
+            "If the image contains any text, premise, or implied claim, fact-check it. "
+            "For claims involving latest, today, current status, active applications, prices, elections, legal status, or other time-sensitive facts, freshness is essential; old or indirect evidence should not be treated as confirmation. "
+            "Use your extensive internal knowledge base to thoroughly verify these claims. "
                             "Do NOT refuse to answer by saying you cannot browse the internet or access current data; provide the best assessment possible based on your existing knowledge. "
                             "Return ONLY JSON with this exact shape: "
                             '{"claims":[{"claim":"...","verdict":"TRUE|FALSE|PARTIALLY TRUE|INSUFFICIENT EVIDENCE|UNVERIFIABLE",'

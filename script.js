@@ -691,6 +691,7 @@ class FactCheckerApp {
         let explanation = result.result.explanation || 'No explanation provided';
         let extractedSources = result.result.sources || [];
 
+        const evidenceProfileHtml = this.renderEvidenceProfile(result.result.evidence_profile);
         const evidenceHtml = this.renderEvidence(result.result.evidence || []);
         const sourcesHtml = evidenceHtml || this.renderSources(extractedSources);
 
@@ -771,6 +772,7 @@ class FactCheckerApp {
                 <i class="fas fa-info-circle"></i>
                 <strong>Analysis:</strong> ${this.escapeHtml(explanation)}
             </div>
+            ${evidenceProfileHtml}
             ${sourcesHtml}
         `;
 
@@ -871,6 +873,7 @@ class FactCheckerApp {
                 const tier = this.escapeHtml(item.tier || 'source');
                 const notes = this.escapeHtml(item.notes || 'Evidence source considered for this claim.');
                 const snippet = item.snippet ? `<p>${this.escapeHtml(item.snippet)}</p>` : '';
+                const freshness = item.published_at ? `<div class="evidence-date">Published ${this.escapeHtml(item.published_at)}</div>` : '';
                 return `
                     <article class="evidence-card">
                         <div class="evidence-topline">
@@ -878,6 +881,7 @@ class FactCheckerApp {
                             <span>${tier}</span>
                         </div>
                         <div class="evidence-host">${host}</div>
+                        ${freshness}
                         ${snippet}
                         <div class="evidence-note">${notes}</div>
                     </article>
@@ -892,6 +896,27 @@ class FactCheckerApp {
                     <span>Evidence used</span>
                 </div>
                 ${cards}
+            </div>
+        `;
+    }
+
+    renderEvidenceProfile(profile) {
+        if (!profile || typeof profile !== 'object') return '';
+        const allowedQualities = ['missing', 'limited', 'moderate', 'strong'];
+        const rawQuality = String(profile.quality || 'limited').toLowerCase();
+        const safeQuality = allowedQualities.includes(rawQuality) ? rawQuality : 'limited';
+        const quality = this.escapeHtml(safeQuality);
+        const count = Number(profile.source_count || 0);
+        const strong = Number(profile.strong_source_count || 0);
+        const hosts = Number(profile.distinct_hosts || 0);
+        const latest = profile.latest_published_at ? `<span><i class="fas fa-clock"></i> Latest ${this.escapeHtml(profile.latest_published_at)}</span>` : '';
+        return `
+            <div class="evidence-profile ${safeQuality}">
+                <span><i class="fas fa-shield-halved"></i> ${quality} evidence</span>
+                <span>${count} sources</span>
+                <span>${strong} strong</span>
+                <span>${hosts} hosts</span>
+                ${latest}
             </div>
         `;
     }

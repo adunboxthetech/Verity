@@ -305,6 +305,9 @@ function renderClaim(item) {
 
   wrapper.append(claim, verdict, explanation);
 
+  const profile = renderEvidenceProfile(result.evidence_profile);
+  if (profile) wrapper.appendChild(profile);
+
   const evidence = Array.isArray(result.evidence) ? result.evidence.filter(item => item && item.url) : [];
   const sources = evidence.length ? evidence.map(item => item.url) : (Array.isArray(result.sources) ? result.sources.filter(Boolean) : []);
   if (evidence.length) {
@@ -317,7 +320,7 @@ function renderClaim(item) {
       link.target = "_blank";
       link.rel = "noopener";
       link.title = item.notes || item.title || item.url;
-      link.textContent = `${item.host || humanizeUrl(item.url, index + 1)} · ${item.tier || "source"}`;
+      link.textContent = `${item.host || humanizeUrl(item.url, index + 1)} · ${item.tier || "source"}${item.published_at ? ` · ${item.published_at}` : ""}`;
       evidenceBox.appendChild(link);
       if (index < Math.min(evidence.length, 3) - 1) {
         evidenceBox.appendChild(document.createTextNode(", "));
@@ -355,6 +358,30 @@ function statusLabel(verdict) {
   return "Needs more evidence";
 }
 
+function renderEvidenceProfile(profile) {
+  if (!profile || typeof profile !== "object") return null;
+  const allowedQualities = ["missing", "limited", "moderate", "strong"];
+  const rawQuality = String(profile.quality || "limited").toLowerCase();
+  const safeQuality = allowedQualities.includes(rawQuality) ? rawQuality : "limited";
+  const wrapper = document.createElement("div");
+  wrapper.className = `evidence-profile ${safeQuality}`;
+  const parts = [
+    `${safeQuality} evidence`,
+    `${Number(profile.source_count || 0)} sources`,
+    `${Number(profile.strong_source_count || 0)} strong`,
+    `${Number(profile.distinct_hosts || 0)} hosts`
+  ];
+  if (profile.latest_published_at) {
+    parts.push(`latest ${profile.latest_published_at}`);
+  }
+  parts.forEach((part) => {
+    const span = document.createElement("span");
+    span.textContent = part;
+    wrapper.appendChild(span);
+  });
+  return wrapper;
+}
+
 async function copyReport() {
   const report = buildReportText();
   if (!report) return;
@@ -377,6 +404,9 @@ function buildReportText() {
     const result = item.result || {};
     lines.push(`Claim ${index + 1}: ${item.claim || "Unknown claim"}`);
     lines.push(`Status: ${result.status_label || statusLabel(result.verdict)} (${result.verdict || "UNKNOWN"}, ${result.confidence || "N/A"}%)`);
+    if (result.evidence_profile) {
+      lines.push(`Evidence: ${result.evidence_profile.quality || "limited"} (${result.evidence_profile.source_count || 0} sources, ${result.evidence_profile.strong_source_count || 0} strong)`);
+    }
     lines.push(`Analysis: ${result.explanation || "No explanation provided."}`);
     const evidence = Array.isArray(result.evidence) ? result.evidence : [];
     const sources = evidence.length ? evidence.map(item => item.url) : (Array.isArray(result.sources) ? result.sources : []);

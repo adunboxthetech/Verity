@@ -48,6 +48,24 @@ class ResultMetadataTests(unittest.TestCase):
         self.assertEqual(result["claim_domain"], "science")
         self.assertEqual(result["evidence"][0]["host"], "nasa.gov")
         self.assertIn("tier", result["evidence"][0])
+        self.assertEqual(result["evidence_profile"]["quality"], "moderate")
+        self.assertEqual(result["evidence_profile"]["strong_source_count"], 1)
+
+    def test_public_evidence_preserves_freshness_metadata(self):
+        item = core._public_evidence_item(
+            {
+                "url": "https://www.nasa.gov/news",
+                "title": "NASA news",
+                "snippet": "A current update.",
+                "source_tier": "primary",
+                "source_authority_score": "92",
+                "published_at": "2026-06-12",
+                "fetched_at": "2026-06-13T00:00:00+00:00",
+            }
+        )
+
+        self.assertEqual(item["published_at"], "2026-06-12")
+        self.assertEqual(item["fetched_at"], "2026-06-13T00:00:00+00:00")
 
     def test_claim_breakdown_summarizes_checked_claims(self):
         results = core._enrich_fact_check_results(

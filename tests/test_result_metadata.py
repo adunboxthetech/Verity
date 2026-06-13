@@ -67,6 +67,18 @@ class ResultMetadataTests(unittest.TestCase):
         self.assertEqual(item["published_at"], "2026-06-12")
         self.assertEqual(item["fetched_at"], "2026-06-13T00:00:00+00:00")
 
+    def test_quota_errors_are_user_friendly(self):
+        response = core.GeminiResponse(
+            status_code=429,
+            body='{"error":{"message":"Quota exceeded for metric: requests. Please retry in 51.8s."}}',
+        )
+
+        message = core._extract_error_message(response)
+
+        self.assertIn("temporarily rate-limited", message)
+        self.assertIn("52 seconds", message)
+        self.assertNotIn("generativelanguage", message)
+
     def test_claim_breakdown_summarizes_checked_claims(self):
         results = core._enrich_fact_check_results(
             [

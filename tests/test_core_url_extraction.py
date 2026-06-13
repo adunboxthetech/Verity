@@ -166,7 +166,10 @@ class UrlExtractionTests(unittest.TestCase):
             body='[{"error":{"message":"Quota exceeded. Retry later."}}]',
         )
 
-        self.assertEqual(core._extract_error_message(response), "Quota exceeded. Retry later.")
+        self.assertEqual(
+            core._extract_error_message(response),
+            "The AI vision/text provider is temporarily rate-limited.",
+        )
 
     def test_retry_delay_uses_exponential_backoff(self):
         self.assertEqual(core._retry_delay_seconds(0), 1.0)

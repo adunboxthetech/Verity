@@ -206,12 +206,27 @@ def _extract_error_message(response: Optional[GeminiResponse]) -> str:
         if isinstance(error, dict):
             message = error.get("message")
             if isinstance(message, str) and message.strip():
-                return message.strip()
+                return _friendly_upstream_error(message.strip())
         if isinstance(error, str) and error.strip():
-            return error.strip()
+            return _friendly_upstream_error(error.strip())
     if response.body:
-        return response.body[:200]
+        return _friendly_upstream_error(response.body[:200])
     return f"upstream status {response.status_code}"
+
+
+def _friendly_upstream_error(message: str) -> str:
+    value = _clean_text(message)
+    lowered = value.lower()
+    if "quota exceeded" in lowered or "rate-limit" in lowered or "rate limit" in lowered:
+        retry_match = re.search(r"retry in\s+([\d.]+)\s*s", value, flags=re.I)
+        retry_text = ""
+        if retry_match:
+            retry_text = f" Please retry in about {round(float(retry_match.group(1)))} seconds."
+        return (
+            "The AI vision/text provider is temporarily rate-limited."
+            f"{retry_text}"
+        )
+    return value
 
 
 def _coerce_confidence(value: Any, default: int = 75) -> int:

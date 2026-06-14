@@ -3367,6 +3367,88 @@ class FactChecker:
                     result["status"] = status
                     result["status_label"] = status_label
 
+            # Contradiction detector: the model sometimes says FALSE but its
+            # own explanation confirms the claim.  E.g. explanation says
+            # "China topped the standings with 14 gold medals" but verdict is
+            # FALSE.  Detect this by checking whether the claim's key numbers
+            # appear in the explanation without negation language.
+            if verdict in ("FALSE", "MISLEADING") and quality in (
+                "moderate",
+                "strong",
+            ):
+                evidence_items = result.get("evidence", [])
+                explanation = str(result.get("explanation", "")).lower()
+                claim_text = str(item.get("claim", "")).lower()
+                # Strip [Image] prefix for matching
+                claim_text = re.sub(r"^\[image\]\s*", "", claim_text)
+
+                has_reputable_ev = any(
+                    str(ev.get("tier", "")).lower() in ("primary", "reputable", "high")
+                    for ev in evidence_items
+                    if isinstance(ev, dict)
+                )
+
+                if has_reputable_ev and explanation:
+                    # Extract numbers from the claim (e.g. "14" from "14 gold medals")
+                    claim_numbers = set(re.findall(r"\b\d+\b", claim_text))
+                    explanation_numbers = set(re.findall(r"\b\d+\b", explanation))
+                    numbers_confirmed = (
+                        claim_numbers and claim_numbers.issubset(explanation_numbers)
+                    )
+
+                    # Phrases that indicate the explanation actually contradicts
+                    # the claim (legitimate FALSE)
+                    contradiction_phrases = [
+                        "however",
+                        "incorrect",
+                        "inaccurate",
+                        "not true",
+                        "is false",
+                        "actually",
+                        "does not match",
+                        "contradicts",
+                        "differs from",
+                        "different from",
+                        "not confirmed",
+                        "no evidence",
+                        "cannot confirm",
+                        "but the actual",
+                        "but in reality",
+                        "not accurate",
+                        "was not",
+                        "did not",
+                        "does not",
+                        "isn't",
+                        "wasn't",
+                        "didn't",
+                        "rather than",
+                        "instead of",
+                    ]
+                    has_contradiction = any(
+                        phrase in explanation for phrase in contradiction_phrases
+                    )
+                    # Also check for negated claim numbers (e.g. "not 20")
+                    if not has_contradiction and claim_numbers:
+                        for num in claim_numbers:
+                            if re.search(
+                                rf"\bnot\s+{re.escape(num)}\b", explanation
+                            ):
+                                has_contradiction = True
+                                break
+
+                    if numbers_confirmed and not has_contradiction:
+                        # The model's own explanation confirms the claim but
+                        # verdict says FALSE — override.
+                        result["verdict"] = "TRUE"
+                        result["confidence"] = max(
+                            result.get("confidence", 0), 85
+                        )
+                        status, status_label = _status_from_verdict(
+                            result["verdict"]
+                        )
+                        result["status"] = status
+                        result["status_label"] = status_label
+
         return enriched
 
     def extract_image_claims(

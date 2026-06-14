@@ -598,7 +598,10 @@ def _classify_claim_domain(claim: str) -> str:
         return "company_technology"
     if re.search(
         r"\b(match|score|goal|runs|wicket|ipl|cricket|football|nba|nfl|"
-        r"tournament|world cup|olympics)\b",
+        r"tournament|world cup|olympics|athletics|championship|championships|"
+        r"medal|medals|gold medal|silver medal|bronze medal|relay|sprint|"
+        r"marathon|javelin|discus|shot put|hurdles|podium|semifinal|final|"
+        r"athlete|athletes|stadium|league|trophy|batsman|bowler|pitcher)\b",
         text,
     ):
         return "sports"
@@ -657,6 +660,7 @@ def _source_authority_score(url: str, claim_domain: str) -> Tuple[int, str, str]
             "nba.com",
             "nfl.com",
             "olympics.com",
+            "worldathletics.org",
         },
     }
     official_contains = {
@@ -690,6 +694,10 @@ def _source_authority_score(url: str, claim_domain: str) -> Tuple[int, str, str]
         "theverge.com",
         "bloomberg.com",
         "ft.com",
+        # Major sports authorities — reputable regardless of claim domain
+        "olympics.com",
+        "espn.com",
+        "worldathletics.org",
     }
 
     if _is_low_quality_source_url(url):

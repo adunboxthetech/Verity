@@ -3336,37 +3336,24 @@ class FactChecker:
                     elif len(snippet) > 100:
                         best_snippets.append((host, snippet[:200], False))
 
-                if best_snippets:
-                    # Prioritize reputable sources
-                    best_snippets.sort(key=lambda x: 0 if x[2] else 1)
-                    selected_snippets = best_snippets[:2]
+                if best_snippets and has_reputable:
+                    # Filter and prioritize reputable sources
+                    selected_snippets = [b for b in best_snippets if b[2]][:2]
 
                     # Build explanation from evidence
                     source_desc = "; ".join(
                         f"{host} reports: {snip}..." for host, snip, _ in selected_snippets
                     )
-                    if has_reputable:
-                        result["verdict"] = "TRUE"
-                        result["explanation"] = (
-                            f"Web evidence from {len(evidence_items)} sources addresses this claim. "
-                            f"{source_desc} "
-                            "The claim is verified as true based on reports from reputable sources."
-                        )
-                        result["confidence"] = max(
-                            result.get("confidence", 0),
-                            80 if quality == "moderate" else 90,
-                        )
-                    else:
-                        result["verdict"] = "PARTIALLY TRUE"
-                        result["explanation"] = (
-                            f"Web evidence from {len(evidence_items)} sources addresses this claim. "
-                            f"{source_desc} "
-                            "The evidence suggests the claim may be accurate but could not be fully confirmed by the AI model."
-                        )
-                        result["confidence"] = max(
-                            result.get("confidence", 0),
-                            55 if quality == "moderate" else 70,
-                        )
+                    result["verdict"] = "TRUE"
+                    result["explanation"] = (
+                        f"Web evidence from {len(evidence_items)} sources addresses this claim. "
+                        f"{source_desc} "
+                        "The claim is verified as true based on reports from reputable sources."
+                    )
+                    result["confidence"] = max(
+                        result.get("confidence", 0),
+                        80 if quality == "moderate" else 90,
+                    )
                     # Re-compute status from updated verdict
                     status, status_label = _status_from_verdict(result["verdict"])
                     result["status"] = status

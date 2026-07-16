@@ -44,9 +44,10 @@ GEMINI_FALLBACK_MODELS = ["gemini-2.0-flash-lite"]
 # Groq API configuration — primary provider (OpenAI-compatible, higher free-tier RPM)
 GROQ_API_KEY = _get_env_var_insensitive("GROQ_API_KEY")
 GROQ_URL_BASE = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_TEXT_MODEL = "llama-3.3-70b-versatile"
-GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
-GROQ_FALLBACK_TEXT_MODEL = "llama-3.1-8b-instant"
+GROQ_TEXT_MODEL = "openai/gpt-oss-120b"
+GROQ_VISION_MODEL = "qwen/qwen3.6-27b"
+# Groq's recommended replacement for Llama 3.1 8B Instant.
+GROQ_FALLBACK_TEXT_MODEL = "openai/gpt-oss-20b"
 
 DEFAULT_HEADERS = {
     "User-Agent": (

@@ -33,7 +33,7 @@ Verity is a tool I built to verify online claims, articles, social posts, and im
   - **Google Gemini (search grounding and provider fallback)**:
     - Grounded-text model: `gemini-2.0-flash`
     - Fallback model: `gemini-2.0-flash-lite`
-    - Requests that need current web evidence use Gemini's Google Search grounding first; otherwise Groq is preferred.
+    - Text requests that need current web evidence use Gemini's Google Search grounding first. Image requests use Groq vision first and are then refined with current web evidence.
 - **Evidence Grounding**: Every check includes a verdict, confidence score, explanation, source URLs, and structured evidence metadata.
 - **Safer API Handling**: Request size limits, text length validation, simple rate limiting, safer URL checks, and configurable CORS help protect the app from expensive or unsafe requests.
 - **The UI**: A responsive, dark-mode-first frontend. I added some Three.js particle clouds for the background.

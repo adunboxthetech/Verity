@@ -84,6 +84,23 @@ class ResultMetadataTests(unittest.TestCase):
         self.assertIn("52 seconds", message)
         self.assertNotIn("generativelanguage", message)
 
+    def test_qwen_vision_parser_error_is_retryable(self):
+        response = core.GeminiResponse(
+            status_code=400,
+            body='{"error":{"message":"messages[0].content must be a string"}}',
+        )
+
+        self.assertTrue(
+            core._should_retry_groq_vision_response(
+                response, core.GROQ_VISION_MODEL
+            )
+        )
+        self.assertFalse(
+            core._should_retry_groq_vision_response(
+                response, core.GROQ_TEXT_MODEL
+            )
+        )
+
     def test_claim_breakdown_summarizes_checked_claims(self):
         results = core._enrich_fact_check_results(
             [
@@ -144,6 +161,40 @@ class ResultMetadataTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual([call[0] for call in calls], ["gemini"])
+
+    def test_groq_vision_is_preferred_for_image_search_requests(self):
+        checker = core.FactChecker(api_key="gemini-key", groq_api_key="groq-key")
+        calls = []
+
+        def fake_groq(payload, use_vision=False):
+            calls.append(("groq", payload, use_vision))
+            return core.GeminiResponse(status_code=200, body="{}")
+
+        def fake_gemini(payload):
+            calls.append(("gemini", payload, False))
+            return core.GeminiResponse(status_code=200, body="{}")
+
+        checker._post_groq = fake_groq
+        checker._post_gemini = fake_gemini
+
+        response = checker._post_api(
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image_url", "image_url": {"url": "data:image/png;base64,test"}}
+                        ],
+                    }
+                ],
+                "use_web_search": True,
+            }
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([call[0] for call in calls], ["groq"])
+        self.assertTrue(calls[0][2])
+        self.assertNotIn("use_web_search", calls[0][1])
 
     def test_gemini_search_failure_falls_back_to_groq(self):
         checker = core.FactChecker(api_key="gemini-key", groq_api_key="groq-key")

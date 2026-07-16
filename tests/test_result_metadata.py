@@ -27,6 +27,11 @@ class ResultMetadataTests(unittest.TestCase):
     def test_env_lookup_ignores_empty_case_variant(self):
         self.assertEqual(core._get_env_var_insensitive("GROQ_API_KEY"), "real-groq-key")
 
+    def test_groq_models_use_supported_replacements(self):
+        self.assertEqual(core.GROQ_TEXT_MODEL, "openai/gpt-oss-120b")
+        self.assertEqual(core.GROQ_FALLBACK_TEXT_MODEL, "openai/gpt-oss-20b")
+        self.assertEqual(core.GROQ_VISION_MODEL, "qwen/qwen3.6-27b")
+
     def test_enriched_results_include_evidence_metadata(self):
         results = [
             {
@@ -120,7 +125,7 @@ class ResultMetadataTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 413)
 
-    def test_groq_is_primary_even_when_web_search_requested(self):
+    def test_gemini_is_preferred_when_web_search_requested(self):
         checker = core.FactChecker(api_key="gemini-key", groq_api_key="groq-key")
         calls = []
 
@@ -138,20 +143,19 @@ class ResultMetadataTests(unittest.TestCase):
         response = checker._post_api({"messages": [], "use_web_search": True})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual([call[0] for call in calls], ["groq"])
-        self.assertNotIn("use_web_search", calls[0][1])
+        self.assertEqual([call[0] for call in calls], ["gemini"])
 
-    def test_groq_failure_falls_back_to_gemini(self):
+    def test_gemini_search_failure_falls_back_to_groq(self):
         checker = core.FactChecker(api_key="gemini-key", groq_api_key="groq-key")
         calls = []
 
         def fake_groq(payload, use_vision=False):
-            calls.append("groq")
-            return core.GeminiResponse(status_code=429, body="rate limit")
+            calls.append(("groq", payload, use_vision))
+            return core.GeminiResponse(status_code=200, body="{}")
 
         def fake_gemini(payload):
             calls.append("gemini")
-            return core.GeminiResponse(status_code=200, body="{}")
+            return core.GeminiResponse(status_code=429, body="rate limit")
 
         checker._post_groq = fake_groq
         checker._post_gemini = fake_gemini
@@ -159,7 +163,8 @@ class ResultMetadataTests(unittest.TestCase):
         response = checker._post_api({"messages": [], "use_web_search": True})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(calls, ["groq", "gemini"])
+        self.assertEqual([call[0] if isinstance(call, tuple) else call for call in calls], ["gemini", "groq"])
+        self.assertNotIn("use_web_search", calls[1][1])
 
 
 if __name__ == "__main__":

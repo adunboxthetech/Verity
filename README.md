@@ -26,7 +26,7 @@ Verity is a tool I built to verify online claims, articles, social posts, and im
 - **Source Credibility Layer**: Claims are classified into domains such as medical, finance, legal, government/policy, company/technology, science, sports, or general news. Sources are then scored differently for each domain.
 - **Evidence Ranking**: Official sources, primary documents, verified/current announcement posts, regulator filings, reputable reporting, and domain authorities are ranked above weak or stale sources.
 - **Hybrid AI Architecture**:
-  - **Groq (Primary)**: Handles fast text and vision inference using Llama 3.3-70b, Llama 3.1-8B, and Llama 4 Scout.
+  - **Groq (Primary)**: Uses GPT OSS 120B for text checks and Qwen 3.6 27B for vision; GPT OSS 20B is the text-model fallback.
   - **Google Gemini (Fallback/Grounding)**: Steps in when Groq is unavailable or fails, and can provide Google Search grounding in fallback paths.
 - **Evidence Grounding**: Every check includes a verdict, confidence score, explanation, source URLs, and structured evidence metadata.
 - **Safer API Handling**: Request size limits, text length validation, simple rate limiting, safer URL checks, and configurable CORS help protect the app from expensive or unsafe requests.

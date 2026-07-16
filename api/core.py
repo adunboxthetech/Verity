@@ -215,6 +215,17 @@ def _extract_error_message(response: Optional[GeminiResponse]) -> str:
     return f"upstream status {response.status_code}"
 
 
+def _should_retry_groq_vision_response(
+    response: GeminiResponse, model: str
+) -> bool:
+    """Retry Groq's intermittent Qwen vision content-parser failure."""
+    return (
+        model == GROQ_VISION_MODEL
+        and response.status_code == 400
+        and "messages[0].content must be a string" in response.body.lower()
+    )
+
+
 def _friendly_upstream_error(message: str) -> str:
     value = _clean_text(message)
     lowered = value.lower()
@@ -2729,6 +2740,9 @@ class FactChecker:
             # Groq supports response_format for JSON mode
             if payload.get("response_format", {}).get("type") == "json_object":
                 groq_payload["response_format"] = {"type": "json_object"}
+                if model == GROQ_VISION_MODEL:
+                    # Qwen 3.6 requires a non-raw reasoning format with JSON mode.
+                    groq_payload["reasoning_format"] = "hidden"
 
             encoded = json.dumps(groq_payload).encode("utf-8")
             headers = {
@@ -2777,6 +2791,8 @@ class FactChecker:
                     if response.status_code == 200:
                         return response
                     if response.status_code not in GEMINI_TRANSIENT_STATUS_CODES:
+                        if _should_retry_groq_vision_response(response, model):
+                            continue
                         model_failed = True
                         break
                     if model_index < len(models) - 1:
@@ -2812,9 +2828,11 @@ class FactChecker:
     def _post_api(self, payload: Dict[str, Any]) -> Optional[GeminiResponse]:
         """Unified API call with smart provider routing.
 
-        When use_web_search is True, Gemini is preferred because it supports
-        Google Search grounding — Groq/Llama models cannot search the web and
-        fall back to their knowledge cutoff, producing stale verdicts.
+        Image requests prefer Groq's configured vision model. The resulting
+        claims are refined with web evidence later in the fact-check flow.
+
+        For text requests that need web search, Gemini is preferred because it
+        supports Google Search grounding.
 
         For non-search calls, Groq is preferred because:
         - Higher free-tier RPM (30-60 vs 15)
@@ -2823,6 +2841,15 @@ class FactChecker:
         """
         use_vision = self._has_vision_content(payload)
         use_search = bool(payload.get("use_web_search"))
+        groq_response: Optional[GeminiResponse] = None
+
+        # Keep image analysis on the dedicated vision model. Gemini's grounded
+        # JSON generation can reject complex screenshots before analysis starts.
+        if use_vision and self.groq_api_key:
+            groq_payload = {k: v for k, v in payload.items() if k != "use_web_search"}
+            groq_response = self._post_groq(groq_payload, use_vision=True)
+            if groq_response is not None and groq_response.status_code == 200:
+                return groq_response
 
         # When web search is requested, prefer Gemini (Google Search grounding)
         if use_search and self.gemini_api_key:
@@ -2831,8 +2858,7 @@ class FactChecker:
                 return gemini_response
             # Gemini failed — fall through to Groq as last resort
 
-        groq_response: Optional[GeminiResponse] = None
-        if self.groq_api_key:
+        if self.groq_api_key and not use_vision:
             # Strip use_web_search from Groq payloads (not supported)
             groq_payload = {k: v for k, v in payload.items() if k != "use_web_search"}
             groq_response = self._post_groq(groq_payload, use_vision=use_vision)
@@ -3539,23 +3565,13 @@ class FactChecker:
                     {
                         "type": "text",
                         "text": (
-                            f"Today's date is {current_date}. "
-                            f"Analyze this image and fact-check up to {max_claims} substantive factual claims visible in it. "
-                            "The image may be a Reddit/social-media image, meme, screenshot, chart, stock card, headline, or news card. "
-            "Use OCR to extract visible text, labels, quotes, numbers, and charts. "
-            "CRITICAL: DO NOT just describe objects in the image (e.g., 'The image displays a flag'). "
-            "Focus exclusively on extracting and fact-checking assertions, statements, text-based claims, or statistics. "
-            "If the image contains any text, premise, or implied claim, fact-check it. "
-            "For claims involving latest, today, current status, active applications, prices, elections, legal status, or other time-sensitive facts, freshness is essential; old or indirect evidence should not be treated as confirmation. "
-            "You MUST search the web for current information to verify every claim. "
-                            "NEVER say 'as of my knowledge cutoff', 'I do not have information', or 'my training data'. "
-                            "Base your explanations ONLY on what you find from searching. "
-                            "If search results are insufficient, say 'No reliable sources found to confirm or deny this claim' and mark it INSUFFICIENT EVIDENCE. "
+                            f"Today's date is {current_date}. Analyze this image and extract up to {max_claims} substantive factual claims visible in its text, numbers, quotes, charts, or headlines. "
+                            "Ignore browser controls, usernames, timestamps, engagement metrics, and visual descriptions. "
+                            "Do not invent claims that are not visible in the image. "
                             "Return ONLY JSON with this exact shape: "
                             '{"claims":[{"claim":"...","verdict":"TRUE|FALSE|PARTIALLY TRUE|INSUFFICIENT EVIDENCE|UNVERIFIABLE",'
-                            '"confidence":85,"explanation":"2-3 sentences based on search results","sources":["https://..."]}]}. '
-                            "Sources must be full http(s) URLs when available. "
-                            'Only return {"claims":[]} if absolutely no text or factual assertion is present.'
+                            '"confidence":85,"explanation":"brief analysis","sources":[]}]}. '
+                            'Return {"claims":[]} only when the image has no factual assertion.'
                         ),
                     }
                 ],

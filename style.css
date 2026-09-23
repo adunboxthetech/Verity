@@ -404,7 +404,13 @@ h5,
     resize: none;
     padding: 8px 0;
     max-height: 200px;
-    overflow-y: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.prompt-input::-webkit-scrollbar {
+    display: none;
 }
 
 .prompt-input:focus {
@@ -414,6 +420,9 @@ h5,
 .prompt-input::placeholder {
     color: var(--text-muted);
     opacity: 0.7;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* Action Buttons */
@@ -1303,17 +1312,8 @@ h5,
         padding: 0 8px;
     }
 
-    /* Floating Prompt on Mobile: Elegant Glass Bar with Defined Bounds */
+    /* Floating Prompt on Mobile: Seamless & Transparent (like before) */
     .floating-prompt {
-        background: var(--glass-bg);
-        border: 1px solid var(--glass-border);
-        border-radius: var(--radius-lg);
-        box-shadow: var(--glass-shadow);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-    }
-
-    .bottom-area.results-mode .floating-prompt {
         background: transparent !important;
         border: none !important;
         box-shadow: none !important;
@@ -1322,14 +1322,22 @@ h5,
     }
 
     .prompt-container {
-        padding: 8px 12px;
+        padding: 8px 0;
         gap: 8px;
     }
 
     .floating-prompt .prompt-input {
-        font-size: 1rem; /* 16px prevents iOS zoom-on-focus */
+        font-size: 1rem;
         line-height: 1.4;
         max-height: 120px;
+        overflow-y: hidden;
+    }
+
+    .floating-prompt .prompt-input::placeholder {
+        font-size: 0.95rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     /* Touch Targets scaled to >= 40px for mobile ergonomics */

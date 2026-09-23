@@ -121,11 +121,32 @@ class FactCheckerApp {
             }
         });
 
-        // Auto-resize textarea
+        // Auto-resize textarea and manage scrollbar
         this.textInput.addEventListener('input', function() {
             this.style.height = 'auto';
-            this.style.height = (Math.min(this.scrollHeight, 200)) + 'px';
+            const maxHeight = window.innerWidth <= 600 ? 120 : 200;
+            if (this.scrollHeight > maxHeight) {
+                this.style.height = maxHeight + 'px';
+                this.style.overflowY = 'auto';
+            } else {
+                this.style.height = this.scrollHeight + 'px';
+                this.style.overflowY = 'hidden';
+            }
         });
+
+        // Responsive placeholder for different screen sizes
+        const updatePlaceholder = () => {
+            if (!this.textInput) return;
+            if (window.innerWidth <= 480) {
+                this.textInput.placeholder = 'Verify a claim...';
+            } else if (window.innerWidth <= 768) {
+                this.textInput.placeholder = 'Verify a claim or link...';
+            } else {
+                this.textInput.placeholder = 'Verify a claim, paste a link or drop an image...';
+            }
+        };
+        updatePlaceholder();
+        window.addEventListener('resize', updatePlaceholder);
 
         // Tap prompt container to focus input on mobile & desktop
         const promptContainer = document.querySelector('.prompt-container');

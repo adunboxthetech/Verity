@@ -126,6 +126,17 @@ class FactCheckerApp {
             this.style.height = 'auto';
             this.style.height = (Math.min(this.scrollHeight, 200)) + 'px';
         });
+
+        // Tap prompt container to focus input on mobile & desktop
+        const promptContainer = document.querySelector('.prompt-container');
+        if (promptContainer) {
+            promptContainer.addEventListener('click', (e) => {
+                if (e.target.closest('button') || e.target.closest('.dropzone') || e.target.closest('.image-preview')) return;
+                if (this.textInput && document.activeElement !== this.textInput && this.textInput.style.display !== 'none') {
+                    this.textInput.focus();
+                }
+            });
+        }
     }
 
     async loadImages(files) {
@@ -1542,10 +1553,25 @@ class FactCheckerApp {
     flashReportButton(button, text) {
         if (!button) return;
         const label = button.querySelector('span');
-        if (!label) return;
-        const previous = label.textContent;
-        label.textContent = text;
-        setTimeout(() => { label.textContent = previous; }, 1400);
+        const icon = button.querySelector('i');
+        const isIconOnly = !label || label.classList.contains('sr-only');
+
+        if (label && !isIconOnly) {
+            const previous = label.textContent;
+            label.textContent = text;
+            setTimeout(() => { label.textContent = previous; }, 1400);
+        }
+
+        if (icon) {
+            const prevIconClass = icon.className;
+            const isError = text.toLowerCase().includes('retry');
+            icon.className = isError ? 'fas fa-triangle-exclamation' : 'fas fa-check';
+            button.classList.add('flash-success');
+            setTimeout(() => {
+                icon.className = prevIconClass;
+                button.classList.remove('flash-success');
+            }, 1400);
+        }
     }
 
     escapeAttribute(str) {
@@ -1631,9 +1657,15 @@ class MysticalEngine {
     initWebGLCloud() {
         if (typeof THREE === 'undefined') return;
 
-        this.scene = new THREE.Scene();
-        this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-        this.renderer = new THREE.WebGLRenderer({ canvas: this.webglCanvas, alpha: true, antialias: true });
+        try {
+            this.scene = new THREE.Scene();
+            this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+            this.renderer = new THREE.WebGLRenderer({ canvas: this.webglCanvas, alpha: true, antialias: true });
+        } catch (e) {
+            console.warn('WebGL not supported or disabled on device:', e);
+            this.renderer = null;
+            return;
+        }
 
         const fragmentShader = `
             uniform float iTime;

@@ -520,17 +520,13 @@ class FactCheckerApp {
             }
         }
 
-        if (data.analysis_error) {
+        const blockingMessage = data.analysis_error || data.image_analysis_error;
+        if (blockingMessage && resultItems.length === 0) {
             const msgDiv = document.createElement('div');
-            msgDiv.style.margin = '8px 0 12px';
-            msgDiv.style.padding = '8px 12px';
-            msgDiv.style.backgroundColor = 'var(--warning-bg)';
-            msgDiv.style.border = '1px solid var(--warning)';
-            msgDiv.style.borderRadius = '6px';
-            msgDiv.style.color = 'var(--warning)';
-            msgDiv.style.fontSize = '0.9rem';
-            const friendlyMsg = this.getFriendlyErrorMessage(data.analysis_error);
-            msgDiv.innerHTML = `<i class="fas fa-info-circle"></i> ${this.escapeHtml(friendlyMsg)}`;
+            msgDiv.className = 'analysis-error-card';
+            msgDiv.setAttribute('role', 'alert');
+            const friendlyMsg = this.getFriendlyErrorMessage(blockingMessage);
+            msgDiv.innerHTML = `<strong><i class="fas fa-triangle-exclamation"></i> We couldn’t complete this check</strong><p>${this.escapeHtml(friendlyMsg)}</p><p>Please try again in a moment. If the problem continues, contact the site owner.</p>`;
             this.resultsContainer.appendChild(msgDiv);
         }
 
@@ -542,10 +538,8 @@ class FactCheckerApp {
         if (resultItems.length === 0) {
             const empty = document.createElement('p');
             empty.className = 'empty-result';
-            empty.textContent = hasBlockingError ? 'Try again after the provider limit resets, or configure another AI provider key.' : 'No factual claims found to verify.';
-            if (!hasBlockingError) {
-                this.resultsContainer.appendChild(empty);
-            }
+            empty.textContent = hasBlockingError ? 'No result is available because the analysis could not run.' : 'No factual claims found to verify.';
+            this.resultsContainer.appendChild(empty);
         } else {
             let allClaims = [];
             resultItems.forEach((result) => {

@@ -831,6 +831,24 @@ h5,
     line-height: 1.5;
 }
 
+.analysis-error-card {
+    margin: 8px 0 16px;
+    padding: 16px 18px;
+    color: var(--text-main);
+    background: var(--glass-bg);
+    border: 1px solid var(--warning);
+    border-radius: var(--radius-md);
+    line-height: 1.5;
+}
+
+.analysis-error-card strong {
+    color: var(--warning);
+}
+
+.analysis-error-card p {
+    margin: 8px 0 0;
+}
+
 .claim-breakdown {
     background: var(--glass-bg);
     border: 1px solid var(--glass-border);

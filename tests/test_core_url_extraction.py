@@ -195,8 +195,9 @@ class UrlExtractionTests(unittest.TestCase):
     def test_gemini_payload_uses_lite_fallback_model(self):
         models = core._models_for_payload({"model": core.GEMINI_PRIMARY_MODEL})
 
+        self.assertEqual(core.GEMINI_PRIMARY_MODEL, "gemini-3.8-flash")
         self.assertEqual(models[0], core.GEMINI_PRIMARY_MODEL)
-        self.assertIn("gemini-2.0-flash-lite", models)
+        self.assertIn("gemini-3.5-flash-lite", models)
 
     def test_grounding_redirect_sources_fall_back_to_titles(self):
         response = {

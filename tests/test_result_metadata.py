@@ -30,7 +30,7 @@ class ResultMetadataTests(unittest.TestCase):
     def test_groq_models_use_supported_replacements(self):
         self.assertEqual(core.GROQ_TEXT_MODEL, "openai/gpt-oss-120b")
         self.assertEqual(core.GROQ_FALLBACK_TEXT_MODEL, "openai/gpt-oss-20b")
-        self.assertEqual(core.GROQ_VISION_MODEL, "qwen/qwen3.6-27b")
+        self.assertEqual(core.GROQ_VISION_MODEL, "qwen/qwen3.8-27b")
 
     def test_enriched_results_include_evidence_metadata(self):
         results = [

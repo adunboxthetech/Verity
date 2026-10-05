@@ -29,10 +29,10 @@ Verity is a tool I built to verify online claims, articles, social posts, and im
   - **Groq (primary text and vision provider)**:
     - Text: `openai/gpt-oss-120b`
     - Text fallback: `openai/gpt-oss-20b`
-    - Vision: `qwen/qwen3.6-27b`
+    - Vision: `qwen/qwen3.8-27b`
   - **Google Gemini (search grounding and provider fallback)**:
-    - Grounded-text model: `gemini-2.0-flash`
-    - Fallback model: `gemini-2.0-flash-lite`
+    - Grounded-text model: `gemini-3.8-flash`
+    - Fallback model: `gemini-3.5-flash-lite`
     - Text requests that need current web evidence use Gemini's Google Search grounding first. Image requests use Groq vision first and are then refined with current web evidence.
 - **Evidence Grounding**: Every check includes a verdict, confidence score, explanation, source URLs, and structured evidence metadata.
 - **Safer API Handling**: Request size limits, text length validation, simple rate limiting, safer URL checks, and configurable CORS help protect the app from expensive or unsafe requests.

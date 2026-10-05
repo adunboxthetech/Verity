@@ -38,14 +38,14 @@ GEMINI_API_KEY = _get_env_var_insensitive("GEMINI_API_KEY") or _get_env_var_inse
     "GOOGLE_API_KEY"
 )
 GEMINI_URL_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
-GEMINI_PRIMARY_MODEL = "gemini-3.5-flash"
-GEMINI_FALLBACK_MODELS = ["gemini-3.1-flash-lite"]
+GEMINI_PRIMARY_MODEL = "gemini-3.8-flash"
+GEMINI_FALLBACK_MODELS = ["gemini-3.5-flash-lite"]
 
 # Groq API configuration — primary provider (OpenAI-compatible, higher free-tier RPM)
 GROQ_API_KEY = _get_env_var_insensitive("GROQ_API_KEY")
 GROQ_URL_BASE = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_TEXT_MODEL = "openai/gpt-oss-120b"
-GROQ_VISION_MODEL = "qwen/qwen3.6-27b"
+GROQ_VISION_MODEL = "qwen/qwen3.8-27b"
 # Groq's recommended replacement for Llama 3.1 8B Instant.
 GROQ_FALLBACK_TEXT_MODEL = "openai/gpt-oss-20b"
 
@@ -2741,7 +2741,7 @@ class FactChecker:
             if payload.get("response_format", {}).get("type") == "json_object":
                 groq_payload["response_format"] = {"type": "json_object"}
                 if model == GROQ_VISION_MODEL:
-                    # Qwen 3.6 requires a non-raw reasoning format with JSON mode.
+                    # Qwen 3.8 requires a non-raw reasoning format with JSON mode.
                     groq_payload["reasoning_format"] = "hidden"
 
             encoded = json.dumps(groq_payload).encode("utf-8")
